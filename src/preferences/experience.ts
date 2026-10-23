@@ -16,7 +16,7 @@ export interface ExperiencePreferences {
   spritesEnabled: boolean;
 }
 export const defaultExperience: ExperiencePreferences = {
-  audioTransition: 'direct', transitionSeconds: 3, fadeCurve: 'smooth', visualTransition: 'slide',
+  audioTransition: 'fade', transitionSeconds: 3, fadeCurve: 'smooth', visualTransition: 'slide',
   glassEnabled: true, visualizerEnabled: true, spritesEnabled: true,
 };
 export function validatedExperience(raw: unknown): ExperiencePreferences {

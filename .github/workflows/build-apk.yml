@@ -5,11 +5,13 @@ on:
     branches:
       - master
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Hueco Sound APK
+    name: Build Hueco Sound Release APK
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,25 +42,35 @@ jobs:
       - name: Prebuild Native Android Code
         run: npx expo prebuild --platform android --clean
 
-      - name: Build APK (Release / Debug)
+      - name: Bundle JavaScript & Assets for Standalone Release
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx expo export:embed \
+            --platform android \
+            --dev false \
+            --entry-file index.ts \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+
+      - name: Build Standalone Release APK
         working-directory: android
         run: |
           chmod +x gradlew
-          # Gerar keystore para assinatura automatica
-          keytool -genkeypair -v -keystore app/release.keystore -alias huecosound -keyalg RSA -keysize 2048 -validity 10000 -storepass hueco123 -keypass hueco123 -dname "CN=HuecoSound, OU=ZhyrSnow, O=HuecoSound, L=BR, S=BR, C=BR"
-          
-          # Tentar assembleRelease com a keystore; se nao houver signingConfig pronta, rodar assembleDebug
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=release.keystore \
-            -Pandroid.injected.signing.store.password=hueco123 \
-            -Pandroid.injected.signing.key.alias=huecosound \
-            -Pandroid.injected.signing.key.password=hueco123 --no-daemon || ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: Prepare APK File
         run: |
           mkdir -p output
-          find android/app/build/outputs/apk -type f -name "*.apk" -exec cp {} output/HuecoSound.apk \;
-          echo "APK gerado com sucesso:"
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk output/HuecoSound.apk
+          elif ls android/app/build/outputs/apk/release/*-release.apk 1> /dev/null 2>&1; then
+            cp android/app/build/outputs/apk/release/*-release.apk output/HuecoSound.apk
+          else
+            echo "ERRO: O APK standalone de Release nao foi encontrado!"
+            ls -laR android/app/build/outputs/apk
+            exit 1
+          fi
+          echo "APK standalone compilado com sucesso:"
           ls -lh output/HuecoSound.apk
 
       - name: Upload Artifact
@@ -72,18 +84,17 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         with:
           files: output/HuecoSound.apk
-          tag_name: v1.2.0-build-${{ github.run_number }}
+          tag_name: ${{ github.ref_name || format('v1.2.0-build-{0}', github.run_number) }}
           name: Hueco Sound v1.2.0 (Build #${{ github.run_number }})
           body: |
             ### 🎵 Hueco Sound APK - Download Direto
             
-            - **Versão:** 1.2.0
+            - **Versão:** 1.2.0 (Release Standalone)
             - **Build:** #${{ github.run_number }}
-            - **Novidades:**
-              - Busca liberada para prévias de artistas, vazamentos, remixes e vídeos do YouTube.
-              - Integração e busca direta no catálogo do SoundCloud.
-              - Abas rápidas na busca: Tudo, Prévias & Vídeos, SoundCloud, Músicas, Artistas e Álbuns.
-              - Download offline direto com armazenamento nativo.
-              - Suporte a segundo plano e controles na tela de bloqueio.
+            - **Novidades desta atualização:**
+              - **Correção definitiva do crash "Unable to load script":** JavaScript compilado com Hermes e embutido 100% offline direto no APK (não requer Metro nem Wi-Fi).
+              - **Mixagem / Crossfade estilo Spotify:** Transições suaves entre as músicas com tempo ajustável (1s a 8s) e curva suave (DJ).
+              - **Interface inspirada no Spotify:** Layout otimizado com atalhos diretos para Letras, Temporizador e Fila, além do card expansível de letras.
+              - **Busca destravada:** Suporte a prévias de artistas, snippets, vazamentos, remixes e busca direta no catálogo do SoundCloud.
           draft: false
           prerelease: false
