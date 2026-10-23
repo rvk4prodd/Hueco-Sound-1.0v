@@ -69,6 +69,7 @@ export function parseSavedData(raw: string): SavedPlayerData {
         description: typeof playlist.description === "string" ? playlist.description.slice(0, 1000) : undefined,
         tracks: validatedTracks(playlist.tracks),
         createdAt: finite(playlist.createdAt, Date.now()), updatedAt: finite(playlist.updatedAt, Date.now()),
+        mixSettings: playlist.mixSettings && typeof playlist.mixSettings === "object" ? playlist.mixSettings as Playlist["mixSettings"] : undefined,
       });
     }
   }

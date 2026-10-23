@@ -6,6 +6,8 @@ import { usePlayerStore } from '../player/usePlayerStore';
 import { useUIStore } from '../ui/useUIStore';
 import { useDeviceLibraryStore } from '../library/useDeviceLibraryStore';
 import { importLocalTracks } from '../library/transfers';
+import { downloadPlaylist } from '../library/downloads';
+import { PlaylistMixStudio } from '../components/PlaylistMixStudio';
 import { SongRow } from '../components/SongRow';
 import { colors } from '../theme';
 import { ActionButton, ConfirmDialog, Cover, EmptyState, IconButton, NameDialog, screenStyles as base } from './ScreenParts';
@@ -26,11 +28,14 @@ export function PlaylistScreen() {
   const deletePlaylist = usePlayerStore(s => s.deletePlaylist);
   const removeTrack = usePlayerStore(s => s.removeTrackFromPlaylist);
   const moveTrack = usePlayerStore(s => s.movePlaylistTrack);
+  const updatePlaylistMixSettings = usePlayerStore(s => s.updatePlaylistMixSettings);
   const clearHistory = usePlayerStore(s => s.clearHistory);
   const notify = useUIStore(s => s.notify);
   const localTracks = useDeviceLibraryStore(s => s.localTracks);
   const removeLocalTrack = useDeviceLibraryStore(s => s.removeTrack);
   const [importing, setImporting] = useState(false);
+  const [downloadingState, setDownloadingState] = useState<{ current: number; total: number } | null>(null);
+  const [mixStudioOpen, setMixStudioOpen] = useState(false);
   const [removingLocal, setRemovingLocal] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState(false);
@@ -51,13 +56,67 @@ export function PlaylistScreen() {
   };
   const play = () => { if (active) void togglePlayPause(); else if (filtered.length) void playTrack(filtered[shuffle ? Math.floor(Math.random() * filtered.length) : 0], filtered); };
 
+  const startDownloadAll = () => {
+    if (downloadingState || !tracks.length) return;
+    setDownloadingState({ current: 0, total: tracks.length });
+    notify(`Iniciando download de ${tracks.length} músicas...`);
+    void downloadPlaylist(id, tracks, p => {
+      setDownloadingState({ current: p.current, total: p.total });
+    }).then(result => {
+      if (result.failed > 0) {
+        notify(`${result.success} músicas salvas (${result.failed} falharam).`);
+      } else {
+        notify(`Todas as ${result.success} músicas foram salvas offline!`);
+      }
+    }).catch(e => {
+      notify(e instanceof Error ? e.message : 'Não foi possível baixar.');
+    }).finally(() => {
+      setDownloadingState(null);
+    });
+  };
+
   if (!isFixed && !playlist) return <View style={base.screen}><View style={base.header}><IconButton name="arrow-back" label="Voltar" onPress={back} /></View><EmptyState title="Playlist não encontrada" description="Ela pode ter sido removida da sua biblioteca." action="Voltar à biblioteca" onAction={() => router.replace('/library')} /></View>;
 
   return <View style={base.screen}><FlatList style={{ flex: 1 }} data={filtered} keyExtractor={t => t.id} initialNumToRender={12} windowSize={7} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={base.content}
     ListHeaderComponent={<>
       <View style={s.top}><IconButton name="arrow-back" label="Voltar" onPress={back} /><Text style={s.topLabel}>{id === 'recent' ? 'HISTÓRICO' : 'SUA BIBLIOTECA'}</Text>{!isFixed || id === 'device' ? <IconButton name={editing ? 'checkmark' : 'create-outline'} label={editing ? 'Concluir edição' : id === 'device' ? 'Gerenciar arquivos locais' : 'Editar playlist e ordem das músicas'} onPress={() => setEditing(v => !v)} /> : <View style={{ width: 44 }} />}</View>
       <View style={[s.hero, id === 'liked' && { backgroundColor: '#282b44' }]}><Cover uri={!isFixed ? tracks[0]?.coverUrl : undefined} size={170} icon={id === 'liked' ? 'heart' : id === 'recent' ? 'time' : id === 'device' ? 'phone-portrait' : 'albums'} color={id === 'liked' ? '#6a61b8' : '#43664d'} /><Text style={s.playlistType}>{isFixed ? 'SUA COLEÇÃO' : 'PLAYLIST PESSOAL'}</Text><Text style={s.name}>{name}</Text><Text style={s.description}>{id === 'liked' ? 'Os sons que têm um lugar só seu.' : id === 'recent' ? 'Volte para as músicas que passaram por aqui.' : id === 'device' ? 'Arquivos salvos no aparelho. Sua música até sem conexão.' : playlist?.description || 'Um pouco de tudo que faz seu dia soar melhor.'}</Text><Text style={s.meta}>{tracks.length} {tracks.length === 1 ? 'música' : 'músicas'}{duration > 0 ? ` · ${Math.ceil(duration / 60_000)} min` : ''}</Text></View>
-      <View style={s.controls}><View style={{ flexDirection: 'row', alignItems: 'center' }}>{(!isFixed || id === 'device') && <IconButton name="add-circle-outline" disabled={importing} label={id === 'device' ? 'Importar arquivos de áudio' : 'Adicionar músicas à playlist'} onPress={add} />}<IconButton name="shuffle" label={shuffle ? 'Desativar ordem aleatória' : 'Ativar ordem aleatória'} color={shuffle ? colors.accent : colors.muted} onPress={toggleShuffle} />{id === 'recent' && tracks.length > 0 && <IconButton name="trash-outline" label="Limpar histórico" onPress={() => setDeleting(true)} />}</View><ActionButton disabled={!filtered.length} label={active ? 'Pausar' : 'Reproduzir'} icon={active ? 'pause' : 'play'} onPress={play} /></View>
+      {downloadingState && (
+        <View style={s.downloadBanner}>
+          <Ionicons name="cloud-download-outline" size={16} color={colors.accent} />
+          <Text style={s.downloadBannerText}>
+            Baixando músicas para ouvir offline ({downloadingState.current} de {downloadingState.total})...
+          </Text>
+        </View>
+      )}
+      <View style={s.controls}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {(!isFixed || id === 'device') && <IconButton name="add-circle-outline" disabled={importing} label={id === 'device' ? 'Importar arquivos de áudio' : 'Adicionar músicas à playlist'} onPress={add} />}
+          <IconButton name="shuffle" label={shuffle ? 'Desativar ordem aleatória' : 'Ativar ordem aleatória'} color={shuffle ? colors.accent : colors.muted} onPress={toggleShuffle} />
+          {id !== 'device' && tracks.length > 0 && (
+            <IconButton
+              name={downloadingState ? 'cloud-download' : 'arrow-down-circle-outline'}
+              label={downloadingState ? `Baixando ${downloadingState.current}/${downloadingState.total}` : 'Baixar todas as músicas da playlist'}
+              color={downloadingState ? colors.accent : colors.muted}
+              disabled={!!downloadingState}
+              onPress={startDownloadAll}
+            />
+          )}
+          {!isFixed && playlist && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Abrir mixagem da playlist"
+              style={[s.mixButton, playlist.mixSettings?.enabled && s.mixButtonActive]}
+              onPress={() => setMixStudioOpen(true)}
+            >
+              <Ionicons name="options-outline" size={16} color={playlist.mixSettings?.enabled ? '#000' : colors.accent} />
+              <Text style={[s.mixButtonText, playlist.mixSettings?.enabled && s.mixButtonTextActive]}>Mix</Text>
+            </Pressable>
+          )}
+          {id === 'recent' && tracks.length > 0 && <IconButton name="trash-outline" label="Limpar histórico" onPress={() => setDeleting(true)} />}
+        </View>
+        <ActionButton disabled={!filtered.length} label={active ? 'Pausar' : 'Reproduzir'} icon={active ? 'pause' : 'play'} onPress={play} />
+      </View>
       {editing && !isFixed && <View style={s.editPanel}><Text style={s.editTitle}>Organize sua playlist</Text><Text style={base.subtitle}>Use as setas nas músicas para mudar a ordem.</Text><View style={s.editActions}><ActionButton secondary icon="pencil" label="Renomear" onPress={() => setRenaming(true)} /><ActionButton secondary icon="trash-outline" label="Excluir" onPress={() => setDeleting(true)} /></View></View>}
       {editing && id === 'device' && <View style={s.editPanel}><Text style={s.editTitle}>Arquivos do aparelho</Text><Text style={base.subtitle}>Remova da coleção os arquivos que não quiser mais ouvir por aqui.</Text></View>}
       {tracks.length > 0 && <View style={base.inputWrap}><Ionicons name="search" color={colors.muted} size={19} /><TextInput accessibilityLabel="Buscar nesta playlist" style={base.input} value={filter} onChangeText={setFilter} placeholder="Buscar nesta playlist" placeholderTextColor={colors.muted} />{!!filter && <IconButton name="close" label="Limpar busca na playlist" onPress={() => setFilter('')} />}</View>}
@@ -69,6 +128,17 @@ export function PlaylistScreen() {
   <NameDialog visible={renaming} title="Renomear playlist" initialValue={name} onClose={() => setRenaming(false)} onSave={value => { renamePlaylist(id, value); setRenaming(false); notify('Playlist renomeada.'); }} />
   <ConfirmDialog visible={!!removingLocal} title="Remover da coleção local?" description={`“${removingLocal?.title || ''}” será removida de “Neste celular”.`} confirmLabel="Remover" onClose={() => setRemovingLocal(null)} onConfirm={() => { const target = removingLocal; setRemovingLocal(null); if (target) void removeLocalTrack(target.id).then(() => notify('Música removida da coleção local.')).catch(() => notify('Não foi possível remover. Tente novamente.')); }} />
   <ConfirmDialog visible={deleting} title={id === 'recent' ? 'Limpar histórico?' : 'Excluir esta playlist?'} description={id === 'recent' ? 'As músicas tocadas recentemente serão removidas do histórico.' : `“${name}” será removida da sua biblioteca.`} confirmLabel={id === 'recent' ? 'Limpar' : 'Excluir'} onClose={() => setDeleting(false)} onConfirm={() => { setDeleting(false); if (id === 'recent') { clearHistory(); notify('Histórico limpo.'); } else { deletePlaylist(id); router.replace('/library'); notify('Playlist excluída.'); } }} />
+  {playlist && (
+    <PlaylistMixStudio
+      visible={mixStudioOpen}
+      playlist={playlist}
+      onClose={() => setMixStudioOpen(false)}
+      onSave={settings => {
+        updatePlaylistMixSettings(playlist.id, settings);
+        notify('Mixagem da playlist salva com sucesso.');
+      }}
+    />
+  )}
   </View>;
 }
 
@@ -76,11 +146,48 @@ const s = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 6 },
   topLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.7 },
   hero: { backgroundColor: '#233326', paddingHorizontal: 26, paddingTop: 12, paddingBottom: 26, alignItems: 'center', gap: 12, marginHorizontal: 16, borderRadius: 22 },
+  downloadBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#2dd4bf22',
+    borderWidth: 1,
+    borderColor: '#2dd4bf55',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+  },
+  downloadBannerText: { color: colors.accent, fontSize: 12, fontWeight: '700', flex: 1 },
   playlistType: { color: colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.8, marginTop: 7 },
   name: { color: colors.text, fontSize: 31, fontWeight: '800', letterSpacing: -.7, textAlign: 'center' },
   description: { color: '#c0c8ba', fontSize: 13, lineHeight: 20, textAlign: 'center', maxWidth: 300 },
   meta: { color: colors.muted, fontSize: 12 },
   controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 20 },
+  mixButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mixButtonActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  mixButtonText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mixButtonTextActive: {
+    color: '#000',
+  },
   editPanel: { marginHorizontal: 20, padding: 17, borderRadius: 16, backgroundColor: colors.surface, marginBottom: 20, gap: 9 },
   editTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   editActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 7 },

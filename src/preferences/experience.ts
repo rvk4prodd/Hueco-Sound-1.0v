@@ -6,6 +6,9 @@ import { useUIStore } from '../ui/useUIStore';
 export type AudioTransition = 'direct' | 'fade';
 export type FadeCurve = 'smooth' | 'linear';
 export type VisualTransition = 'slide' | 'fade' | 'zoom' | 'none';
+export type AccentTheme = 'cyan' | 'purple' | 'emerald' | 'amber' | 'rose';
+export type WallpaperPreset = 'default' | 'neon' | 'cyberpunk' | 'midnight' | 'custom';
+
 export interface ExperiencePreferences {
   audioTransition: AudioTransition;
   transitionSeconds: number;
@@ -14,10 +17,16 @@ export interface ExperiencePreferences {
   glassEnabled: boolean;
   visualizerEnabled: boolean;
   spritesEnabled: boolean;
+  customWallpaperUri: string | null;
+  wallpaperPreset: WallpaperPreset;
+  glassBlurIntensity: number;
+  glassOpacity: number;
+  accentTheme: AccentTheme;
 }
 export const defaultExperience: ExperiencePreferences = {
   audioTransition: 'fade', transitionSeconds: 3, fadeCurve: 'smooth', visualTransition: 'slide',
   glassEnabled: true, visualizerEnabled: true, spritesEnabled: true,
+  customWallpaperUri: null, wallpaperPreset: 'default', glassBlurIntensity: 25, glassOpacity: 0.85, accentTheme: 'cyan',
 };
 export function validatedExperience(raw: unknown): ExperiencePreferences {
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -29,6 +38,11 @@ export function validatedExperience(raw: unknown): ExperiencePreferences {
     glassEnabled: typeof data.glassEnabled === 'boolean' ? data.glassEnabled : true,
     visualizerEnabled: typeof data.visualizerEnabled === 'boolean' ? data.visualizerEnabled : true,
     spritesEnabled: typeof data.spritesEnabled === 'boolean' ? data.spritesEnabled : true,
+    customWallpaperUri: typeof data.customWallpaperUri === 'string' && data.customWallpaperUri.trim() ? data.customWallpaperUri : null,
+    wallpaperPreset: ['default', 'neon', 'cyberpunk', 'midnight', 'custom'].includes(String(data.wallpaperPreset)) ? data.wallpaperPreset as WallpaperPreset : 'default',
+    glassBlurIntensity: typeof data.glassBlurIntensity === 'number' && Number.isFinite(data.glassBlurIntensity) ? Math.max(0, Math.min(100, data.glassBlurIntensity)) : 25,
+    glassOpacity: typeof data.glassOpacity === 'number' && Number.isFinite(data.glassOpacity) ? Math.max(0.1, Math.min(1, data.glassOpacity)) : 0.85,
+    accentTheme: ['cyan', 'purple', 'emerald', 'amber', 'rose'].includes(String(data.accentTheme)) ? data.accentTheme as AccentTheme : 'cyan',
   };
 }
 export const useExperienceStore = create<ExperiencePreferences & { configure: (values: Partial<ExperiencePreferences>) => void }>()(persist(

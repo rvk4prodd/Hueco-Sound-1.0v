@@ -69,6 +69,10 @@ export class AudioManager {
   }
 
   get hasPlayer(): boolean { return this.player !== null; }
+  get currentTrackId(): string | null {
+    const index = this.player?.currentIndex ?? -1;
+    return this.tracks[index]?.id ?? null;
+  }
 
   async loadAndPlay(url: string, track: Track, onStatusUpdate: (status: PlaybackStatus) => void, options: PlaybackOptions): Promise<void> {
     this.stop();
@@ -148,13 +152,18 @@ export class AudioManager {
     if (!player) return;
     const version = ++this.upcomingVersion;
     const current = player.currentIndex;
+    const desired = tracks.slice(0, 2);
+    const existing = this.tracks.slice(current + 1);
+    if (existing.length === desired.length && existing.every((t, i) => t.id === desired[i]?.id)) {
+      return; // Already prebuffered natively; keep existing ExoPlayer buffer intact.
+    }
     for (let index = this.tracks.length - 1; index > current; index--) {
       this.tracks.splice(index, 1);
       this.urls.splice(index, 1);
-      player.remove(index);
+      try { player.remove(index); } catch { /* Ignore if already removed by native layer */ }
     }
     this.retainSources();
-    for (const track of tracks.slice(0, 2)) {
+    for (const track of desired) {
       try {
         const url = await resolve(track);
         if (this.player !== player || this.upcomingVersion !== version) return;
@@ -173,6 +182,10 @@ export class AudioManager {
     if (!this.player) return false;
     const index = this.tracks.findIndex((track) => track.id === id);
     if (index < 0) return false;
+    if (this.player.currentIndex === index) {
+      this.player.play();
+      return true;
+    }
     try {
       this.player.skipTo(index);
       this.player.play();

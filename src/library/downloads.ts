@@ -102,3 +102,53 @@ export function downloadTrack(track: Track): Promise<void> {
   active.set(track.id, task);
   return task;
 }
+
+export interface PlaylistDownloadResult {
+  success: number;
+  failed: number;
+  total: number;
+}
+
+export type PlaylistProgressCallback = (progress: {
+  current: number;
+  total: number;
+  trackTitle: string;
+}) => void;
+
+const activePlaylistDownloads = new Set<string>();
+
+export function isPlaylistDownloading(playlistId: string): boolean {
+  return activePlaylistDownloads.has(playlistId);
+}
+
+/** Download an entire playlist into local storage with progress reporting. */
+export async function downloadPlaylist(
+  playlistId: string,
+  tracks: Track[],
+  onProgress?: PlaylistProgressCallback
+): Promise<PlaylistDownloadResult> {
+  if (activePlaylistDownloads.has(playlistId)) {
+    throw new Error("O download desta playlist já está em andamento.");
+  }
+  activePlaylistDownloads.add(playlistId);
+  let success = 0;
+  let failed = 0;
+  const total = tracks.length;
+
+  try {
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i];
+      onProgress?.({ current: i + 1, total, trackTitle: track.title });
+      try {
+        await downloadTrack(track);
+        success++;
+      } catch {
+        failed++;
+      }
+    }
+  } finally {
+    activePlaylistDownloads.delete(playlistId);
+  }
+
+  return { success, failed, total };
+}

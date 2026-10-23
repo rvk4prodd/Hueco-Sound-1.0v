@@ -28,6 +28,7 @@ vi.mock("../src/player/prepareSource", () => ({ preparePlaybackSource: (...args:
 vi.mock("../src/library/useDeviceLibraryStore", () => ({ getPlaybackTrack: (track: Track) => track }));
 vi.mock("../src/player/audioManager", () => ({ audioManager: {
   get hasPlayer() { return harness.hasPlayer; },
+  get currentTrackId() { return harness.activeId; },
   loadAndPlay: (...args: unknown[]) => harness.load(...args),
   stop: () => { harness.hasPlayer = false; },
   pause: () => harness.pause(), resume: () => harness.resume(), seekTo: (position: number) => harness.seek(position),

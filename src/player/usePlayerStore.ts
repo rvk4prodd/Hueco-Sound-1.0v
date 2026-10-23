@@ -58,6 +58,7 @@ export interface PlayerState {
   addTrackToPlaylist: (id: string, track: Track) => boolean;
   removeTrackFromPlaylist: (id: string, trackId: string) => void;
   movePlaylistTrack: (id: string, from: number, to: number) => void;
+  updatePlaylistMixSettings: (id: string, mixSettings: import('../types').PlaylistMixSettings) => void;
   setSleepTimer: (minutes: number | null) => void;
   setSleepAtEndOfTrack: (enabled: boolean) => void;
   setPlaybackRate: (rate: number) => void;
@@ -151,8 +152,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const ids = [...new Set([...forward, ...shuffleRemaining])];
       return ids.map((id) => state.queue.find((track) => track.id === id)).filter((track): track is Track => !!track).slice(0, 2);
     }
-    // Wrapping repeat-all is handled at the logical end, never in a truncated native window.
-    return state.queue.slice(state.currentIndex + 1, state.currentIndex + 3);
+    const nextTracks = state.queue.slice(state.currentIndex + 1, state.currentIndex + 3);
+    if (state.repeatMode === "all" && nextTracks.length < 2 && state.queue.length > 0) {
+      const wrapNeeded = 2 - nextTracks.length;
+      return [...nextTracks, ...state.queue.slice(0, wrapNeeded)];
+    }
+    return nextTracks;
   }
 
   function syncUpcoming(): void { void audioManager.setUpcoming(upcoming(), (track) => streamFor(track)).catch(() => { /* Manual Next resolves again if native prefetch is unavailable. */ }); }
@@ -227,7 +232,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         pausePlayback();
       } else if (state.repeatMode === "one") {
         void get().seekTo(0).then(() => { lastFinishedTrack = null; audioManager.resume(); });
-      } else void advance(true);
+      } else {
+        const currentNativeId = audioManager.currentTrackId;
+        if (currentNativeId && currentNativeId !== status.trackId) {
+          // Native queue advanced seamlessly without interruption.
+          return;
+        }
+        void advance(true);
+      }
     }
   }
 
@@ -258,6 +270,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           if (requestVersion !== version) return;
           const queued = get().queue.find((item) => item.id === next.id);
           if (!queued) { void startPlayback(next, [next]); return; }
+          lastFinishedTrack = null;
           selectTrack(queued, version);
           syncUpcoming();
         },
@@ -442,6 +455,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     removeTrackFromPlaylist: (id, trackId) => updatePlaylist(id, (playlist) => ({ ...playlist, tracks: playlist.tracks.filter((track) => track.id !== trackId) })),
     movePlaylistTrack: (id, from, to) => updatePlaylist(id, (playlist) => ({ ...playlist, tracks: moved(playlist.tracks, from, to) })),
+    updatePlaylistMixSettings: (id, mixSettings) => updatePlaylist(id, (playlist) => ({ ...playlist, mixSettings })),
     setSleepTimer: (minutes) => {
       if (sleepTimeout) clearTimeout(sleepTimeout);
       sleepTimeout = null;

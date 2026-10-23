@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Share, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePlayerStore } from '../player/usePlayerStore';
 import { useUIStore } from '../ui/useUIStore';
@@ -48,6 +49,22 @@ export function SettingsScreen() {
     finally { setBusy(null); }
   };
 
+  const pickWallpaper = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const uri = result.assets[0].uri;
+        experience.configure({ customWallpaperUri: uri, wallpaperPreset: 'custom' });
+        notify('Plano de fundo personalizado aplicado com efeito glass!');
+      }
+    } catch {
+      notify('Não foi possível carregar a imagem.');
+    }
+  };
+
   return <View style={base.screen}><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[base.content, { paddingBottom: 36 }]}>
     <View style={base.header}><IconButton name="arrow-back" label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} /><Text style={[base.title, { fontSize: 27 }]}>Configurações</Text></View>
     <View style={s.intro}><Ionicons name="options-outline" color={colors.accent} size={27} /><View style={{ flex: 1, gap: 6 }}><Text style={s.introTitle}>Do seu jeito.</Text><Text style={base.subtitle}>Ajuste a reprodução e cuide da sua coleção.</Text></View></View>
@@ -56,7 +73,7 @@ export function SettingsScreen() {
       <View style={s.setting}><Text style={s.optionTitle}>Transição contínua</Text><Text style={s.optionDescription}>Mistura o fim de uma música com o início da próxima sem silêncio, igual ao Spotify.</Text><View style={s.wrapChips}><Chip label="Desligada" active={experience.audioTransition === 'direct'} onPress={() => experience.configure({ audioTransition: 'direct' })} />{[1, 2, 3, 5, 8].map(seconds => <Chip key={seconds} label={`${seconds} s`} active={experience.audioTransition === 'fade' && experience.transitionSeconds === seconds} onPress={() => experience.configure({ audioTransition: 'fade', transitionSeconds: seconds })} />)}</View></View>
       {experience.audioTransition === 'fade' && <View style={s.setting}><Text style={s.optionTitle}>Curva da mixagem</Text><View style={s.wrapChips}><Chip label="Suave (DJ)" active={experience.fadeCurve === 'smooth'} onPress={() => experience.configure({ fadeCurve: 'smooth' })} /><Chip label="Linear" active={experience.fadeCurve === 'linear'} onPress={() => experience.configure({ fadeCurve: 'linear' })} /></View></View>}
     </Section>
-    <Section title="PRECISA DE AJUDA?"><Pressable accessibilityRole="button" onPress={() => { const p = usePlayerStore.getState(); void Share.share({ message: JSON.stringify({ app: 'Hueco Sound 1.2.0', ambiente: Constants.executionEnvironment, faixa: p.currentTrack ? { id: p.currentTrack.id, titulo: p.currentTrack.title } : null, fila: p.queue.length, indice: p.currentIndex, tocando: p.isPlaying, carregando: p.isLoading, erro: p.error?.replace(/https?:\/\/[^\s]+/g, '[endereço omitido]') }, null, 2) }).catch(() => notify('Não foi possível abrir o diagnóstico.')); }} style={s.setting}><Text style={s.optionTitle}>Compartilhar diagnóstico de reprodução</Text><Text style={s.optionDescription}>Gera um resumo da faixa, fila e último erro, sem senhas nem URLs de áudio.</Text></Pressable></Section>
+    <Section title="PRECISA DE AJUDA?"><Pressable accessibilityRole="button" onPress={() => { const p = usePlayerStore.getState(); void Share.share({ message: JSON.stringify({ app: 'Hueco Sound 1.3.0', ambiente: Constants.executionEnvironment, faixa: p.currentTrack ? { id: p.currentTrack.id, titulo: p.currentTrack.title } : null, fila: p.queue.length, indice: p.currentIndex, tocando: p.isPlaying, carregando: p.isLoading, erro: p.error?.replace(/https?:\/\/[^\s]+/g, '[endereço omitido]') }, null, 2) }).catch(() => notify('Não foi possível abrir o diagnóstico.')); }} style={s.setting}><Text style={s.optionTitle}>Compartilhar diagnóstico de reprodução</Text><Text style={s.optionDescription}>Gera um resumo da faixa, fila e último erro, sem senhas nem URLs de áudio.</Text></Pressable></Section>
     <Section title="REPRODUÇÃO">
       <View style={s.setting}><Text style={s.optionTitle}>Velocidade</Text><Text style={s.optionDescription}>Ajuste o ritmo do áudio.</Text><View style={s.wrapChips}>{[.75, 1, 1.25, 1.5, 2].map(rate => <Chip key={rate} label={`${rate}×`} active={playbackRate === rate} onPress={() => setPlaybackRate(rate)} />)}</View></View>
       <View style={s.setting}><View style={s.between}><Text style={s.optionTitle}>Volume do aplicativo</Text><Text style={s.value}>{Math.round(volume * 100)}%</Text></View><View style={s.volumeRow}><IconButton name="volume-low-outline" label="Diminuir volume em 10%" disabled={volume <= 0} onPress={() => setVolume(Math.max(0, Math.round((volume - .1) * 10) / 10))} /><View style={s.volumeTrack}><View style={[s.volumeFill, { width: `${volume * 100}%` }]} /></View><IconButton name="volume-high-outline" label="Aumentar volume em 10%" disabled={volume >= 1} onPress={() => setVolume(Math.min(1, Math.round((volume + .1) * 10) / 10))} /></View></View>
@@ -70,6 +87,83 @@ export function SettingsScreen() {
       {([{ key: 'glassEnabled', title: 'Vidro e desfoque', description: 'Brilho translúcido nos cartões e capa desfocada no player.' }, { key: 'visualizerEnabled', title: 'Ondas animadas', description: 'Animação decorativa durante a reprodução, sem analisar o áudio.' }, { key: 'spritesEnabled', title: 'Personagens', description: 'Mostra os personagens nos cartões do Hueco Sound.' }] as const).map(option => <View key={option.key} style={s.switchRow}><View style={{ flex: 1, gap: 5 }}><Text style={s.optionTitle}>{option.title}</Text><Text style={s.optionDescription}>{option.description}</Text></View><Switch accessibilityLabel={option.title} value={experience[option.key]} onValueChange={value => experience.configure({ [option.key]: value })} trackColor={{ false: colors.elevated, true: '#237b69' }} thumbColor={experience[option.key] ? colors.accent : colors.muted} /></View>)}
       <View style={s.switchRow}><View style={{ flex: 1, gap: 5 }}><Text style={s.optionTitle}>Reduzir movimento</Text><Text style={s.optionDescription}>Transições mais discretas entre os controles.</Text></View><Switch accessibilityLabel="Reduzir movimento nas animações" value={reducedMotion} onValueChange={setReducedMotion} trackColor={{ false: colors.elevated, true: '#577441' }} thumbColor={reducedMotion ? colors.accent : colors.muted} /></View>
     </Section>
+    <Section title="PERSONALIZAÇÃO & EFEITO GLASS">
+      <View style={s.setting}>
+        <Text style={s.optionTitle}>Plano de fundo do aplicativo</Text>
+        <Text style={s.optionDescription}>Escolha um tema visual ou selecione uma foto do seu celular com efeito de vidro translúcido.</Text>
+        <View style={s.wrapChips}>
+          {([
+            { id: 'default', label: 'Hueco Dark' },
+            { id: 'neon', label: 'Cyberpunk Neon' },
+            { id: 'midnight', label: 'Noite Estrelada' },
+            { id: 'cyberpunk', label: 'Aurora Glass' },
+          ] as const).map(wp => (
+            <Chip
+              key={wp.id}
+              label={wp.label}
+              active={experience.wallpaperPreset === wp.id && !experience.customWallpaperUri}
+              onPress={() => experience.configure({ wallpaperPreset: wp.id, customWallpaperUri: null })}
+            />
+          ))}
+          <Chip
+            label={experience.customWallpaperUri ? 'Foto selecionada ✓' : 'Escolher foto...'}
+            active={!!experience.customWallpaperUri}
+            onPress={() => void pickWallpaper()}
+          />
+        </View>
+        {experience.customWallpaperUri && (
+          <Pressable accessibilityRole="button" onPress={() => experience.configure({ customWallpaperUri: null, wallpaperPreset: 'default' })} style={{ marginTop: 8 }}>
+            <Text style={{ color: colors.danger, fontSize: 12, fontWeight: '700' }}>Remover foto e restaurar padrão</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={s.setting}>
+        <Text style={s.optionTitle}>Intensidade do desfoque Glass</Text>
+        <Text style={s.optionDescription}>Controla o nível de transparência sobre o plano de fundo.</Text>
+        <View style={s.wrapChips}>
+          {[15, 25, 45, 75].map(blur => (
+            <Chip
+              key={blur}
+              label={`${blur}%`}
+              active={experience.glassBlurIntensity === blur}
+              onPress={() => experience.configure({ glassBlurIntensity: blur })}
+            />
+          ))}
+        </View>
+      </View>
+      <View style={s.setting}>
+        <Text style={s.optionTitle}>Opacidade dos cartões de vidro</Text>
+        <View style={s.wrapChips}>
+          {[{ val: 0.45, label: 'Translúcido' }, { val: 0.7, label: 'Médio' }, { val: 0.85, label: 'Sólido' }].map(op => (
+            <Chip
+              key={op.label}
+              label={op.label}
+              active={Math.abs(experience.glassOpacity - op.val) < 0.1}
+              onPress={() => experience.configure({ glassOpacity: op.val })}
+            />
+          ))}
+        </View>
+      </View>
+      <View style={s.setting}>
+        <Text style={s.optionTitle}>Tema de destaque</Text>
+        <View style={s.wrapChips}>
+          {([
+            { id: 'cyan', label: 'Hueco Cyan' },
+            { id: 'purple', label: 'Cyber Roxo' },
+            { id: 'emerald', label: 'Esmeralda' },
+            { id: 'amber', label: 'Âmbar' },
+            { id: 'rose', label: 'Neon Rosa' },
+          ] as const).map(theme => (
+            <Chip
+              key={theme.id}
+              label={theme.label}
+              active={experience.accentTheme === theme.id}
+              onPress={() => experience.configure({ accentTheme: theme.id })}
+            />
+          ))}
+        </View>
+      </View>
+    </Section>
     <Section title="SUA BIBLIOTECA">
       <Option title={busy === 'audio' ? 'Importando músicas…' : 'Importar áudio do aparelho'} description="Adicione arquivos para ouvir também sem conexão." icon="phone-portrait-outline" disabled={!!busy} onPress={() => void transfer('audio')} />
       <Option title="Conta e sincronização" description="Entre na sua conta Liner e sincronize sua biblioteca." icon="person-circle-outline" onPress={() => router.push('/account')} />
@@ -78,7 +172,7 @@ export function SettingsScreen() {
       <Option title="Limpar histórico" description="Apague músicas recentes e buscas deste aparelho." icon="trash-outline" onPress={() => setClearing(true)} />
     </Section>
     <Section title="HUECO SOUND"><Option title="Sobre, créditos e termos" description="ZhyrSnow, projeto Liner, privacidade e licenças." icon="information-circle-outline" onPress={() => router.push('/about')} /></Section>
-    <View style={s.footer}><HuecoLogo width={200} /><Text style={s.footerText}>ZhyrSnow · Hueco Sound 1.2.0</Text></View>
+    <View style={s.footer}><HuecoLogo width={200} /><Text style={s.footerText}>ZhyrSnow · Hueco Sound 1.3.0</Text></View>
   </ScrollView><ConfirmDialog visible={clearing} title="Limpar histórico?" description="As músicas recentes e o histórico de busca serão apagados. Suas playlists e curtidas continuam salvas." confirmLabel="Limpar" onClose={() => setClearing(false)} onConfirm={() => { clearHistory(); void AsyncStorage.removeItem('@liner_search_history_v1').catch(() => undefined); setClearing(false); notify('Histórico limpo.'); }} /></View>;
 }
 

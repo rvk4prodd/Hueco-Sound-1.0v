@@ -20,10 +20,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install pnpm 10.28.2
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm'
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -31,10 +37,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install pnpm 10.28.2
-        uses: pnpm/action-setup@v4
+      - name: Setup Gradle Build Cache
+        uses: gradle/actions/setup-gradle@v4
         with:
-          version: 10.28.2
+          cache-read-only: false
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
@@ -56,7 +62,7 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
 
       - name: Prepare APK File
         run: |
@@ -84,17 +90,18 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         with:
           files: output/HuecoSound.apk
-          tag_name: ${{ github.ref_name || format('v1.2.0-build-{0}', github.run_number) }}
-          name: Hueco Sound v1.2.0 (Build #${{ github.run_number }})
+          tag_name: ${{ github.ref_name || format('v1.3.0-build-{0}', github.run_number) }}
+          name: Hueco Sound v1.3.0 (Build #${{ github.run_number }})
           body: |
-            ### 🎵 Hueco Sound APK - Download Direto
-            
-            - **Versão:** 1.2.0 (Release Standalone)
+            ### 🎵 Hueco Sound APK v1.3.0 - Download Direto
+
+            - **Versão:** 1.3.0 (Release Standalone)
             - **Build:** #${{ github.run_number }}
-            - **Novidades desta atualização:**
-              - **Correção definitiva do crash "Unable to load script":** JavaScript compilado com Hermes e embutido 100% offline direto no APK (não requer Metro nem Wi-Fi).
-              - **Mixagem / Crossfade estilo Spotify:** Transições suaves entre as músicas com tempo ajustável (1s a 8s) e curva suave (DJ).
-              - **Interface inspirada no Spotify:** Layout otimizado com atalhos diretos para Letras, Temporizador e Fila, além do card expansível de letras.
-              - **Busca destravada:** Suporte a prévias de artistas, snippets, vazamentos, remixes e busca direta no catálogo do SoundCloud.
+            - **Novidades desta grande atualização:**
+              - **Fim da 'Paradinha' / Gapless Nativo Perfeito:** Reprodução 100% contínua e sem interrupções entre as músicas da fila ou repetição de playlist.
+              - **Estúdio de Mixagem Estilo Spotify (`[🎚️ Mix]`):** Disponível em qualquer playlist! Personalize transições entre cada par de faixas com onda dupla (dual waveform), curvas de volume (Crossfade, Sobrepor, Corte rápido), troca de graves EQ (No centro, No final, Planos), e efeitos (Eco/Delay, Filtro passa-baixa, Reverberação).
+              - **Download de Playlist Completa Offline:** Baixe todas as faixas de qualquer playlist de uma vez com um toque para ouvir offline em "Neste celular", com indicador de progresso.
+              - **Personalização Visual Total & Efeito Glass:** Suporte a planos de fundo com temas vibrantes (Cyberpunk Neon, Noite Estrelada, Aurora Glass) ou escolha sua própria foto da galeria com efeito translúcido de vidro e controle de desfoque.
+              - **Build Ultra-Rápido no GitHub Actions:** Caching de Gradle e compilação paralela para gerar novos APKs com tempo de espera reduzido.
           draft: false
           prerelease: false
