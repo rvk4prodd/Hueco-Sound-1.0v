@@ -1,25 +1,65 @@
 {
   "expo": {
-    "name": "liner-mobile",
-    "slug": "liner-mobile",
-    "version": "1.0.0",
+    "name": "Hueco Sound",
+    "slug": "hueco-sound",
+    "version": "1.2.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "icon": "./assets/branding/hueco-icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#060c10",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.zhyrsnow.huecosound",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#060c10",
+        "foregroundImage": "./assets/branding/hueco-icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "versionCode": 3,
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/branding/hueco-icon.png",
+      "name": "Hueco Sound",
+      "shortName": "Hueco Sound"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "enableBackgroundRecording": false,
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
+      "expo-router",
+      "expo-sharing",
+      "expo-font",
+      "expo-asset"
+    ],
+    "scheme": "huecosound",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "36161a73-84df-478a-8299-e48cfd6c2839"
+      }
     }
   }
 }

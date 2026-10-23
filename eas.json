@@ -1,0 +1,9 @@
+{
+  "cli": { "version": ">= 18.0.0", "appVersionSource": "local" },
+  "build": {
+    "base": { "pnpm": "10.28.2", "corepack": false },
+    "development": { "extends": "base", "developmentClient": false, "distribution": "internal", "android": { "buildType": "apk", "gradleCommand": ":app:assembleDebug" } },
+    "preview": { "extends": "base", "distribution": "internal", "android": { "buildType": "apk" } },
+    "production": { "extends": "base", "android": { "buildType": "app-bundle" } }
+  }
+}

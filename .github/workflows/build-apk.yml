@@ -1,0 +1,92 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Hueco Sound APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pnpm 10.28.2
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild Native Android Code
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build APK (Release / Debug)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          # Gerar keystore para assinatura automatica
+          keytool -genkeypair -v -keystore app/release.keystore -alias huecosound -keyalg RSA -keysize 2048 -validity 10000 -storepass hueco123 -keypass hueco123 -dname "CN=HuecoSound, OU=ZhyrSnow, O=HuecoSound, L=BR, S=BR, C=BR"
+          
+          # Tentar assembleRelease com a keystore; se nao houver signingConfig pronta, rodar assembleDebug
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=release.keystore \
+            -Pandroid.injected.signing.store.password=hueco123 \
+            -Pandroid.injected.signing.key.alias=huecosound \
+            -Pandroid.injected.signing.key.password=hueco123 --no-daemon || ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK File
+        run: |
+          mkdir -p output
+          find android/app/build/outputs/apk -type f -name "*.apk" -exec cp {} output/HuecoSound.apk \;
+          echo "APK gerado com sucesso:"
+          ls -lh output/HuecoSound.apk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HuecoSound-APK
+          path: output/HuecoSound.apk
+
+      - name: Release APK on GitHub
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        with:
+          files: output/HuecoSound.apk
+          tag_name: v1.2.0-build-${{ github.run_number }}
+          name: Hueco Sound v1.2.0 (Build #${{ github.run_number }})
+          body: |
+            ### 🎵 Hueco Sound APK - Download Direto
+            
+            - **Versão:** 1.2.0
+            - **Build:** #${{ github.run_number }}
+            - **Novidades:**
+              - Busca liberada para prévias de artistas, vazamentos, remixes e vídeos do YouTube.
+              - Integração e busca direta no catálogo do SoundCloud.
+              - Abas rápidas na busca: Tudo, Prévias & Vídeos, SoundCloud, Músicas, Artistas e Álbuns.
+              - Download offline direto com armazenamento nativo.
+              - Suporte a segundo plano e controles na tela de bloqueio.
+          draft: false
+          prerelease: false

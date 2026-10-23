@@ -1,0 +1,3 @@
+export const colors = { background: '#060c10', surface: '#101d22', elevated: '#1b3035', text: '#eefaf8', muted: '#92aaa9', accent: '#64f4d4', border: '#24413f', danger: '#ff9baf', glass: '#102c2a99', glow: '#64f4d425' };
+export function coverColor(seed: string): string { let hash = 0; for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0; return `hsl(${165 + Math.abs(hash) % 35}, 35%, 16%)`; }
+export function formatTime(ms: number): string { const s = Math.floor(Math.max(0, Number.isFinite(ms) ? ms : 0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }

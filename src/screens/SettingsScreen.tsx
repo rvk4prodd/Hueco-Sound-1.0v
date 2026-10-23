@@ -1,0 +1,106 @@
+import Constants from 'expo-constants';
+import React, { useEffect, useState } from 'react';
+import { Pressable, Share, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePlayerStore } from '../player/usePlayerStore';
+import { useUIStore } from '../ui/useUIStore';
+import { exportLibrary, importLibrary, importLocalTracks } from '../library/transfers';
+import { colors } from '../theme';
+import { Chip, ConfirmDialog, IconButton, screenStyles as base } from './ScreenParts';
+import { useExperienceStore } from '../preferences/experience';
+import { GlassCard } from '../components/GlassCard';
+import { HuecoLogo } from '../components/HuecoBrand';
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) { return <View style={s.section}><Text style={s.sectionTitle}>{title}</Text><GlassCard style={s.card}>{children}</GlassCard></View>; }
+function Option({ title, description, icon, onPress, disabled }: { title: string; description: string; icon: React.ComponentProps<typeof Ionicons>['name']; onPress: () => void; disabled?: boolean }) {
+  return <Pressable disabled={disabled} accessibilityRole="button" onPress={onPress} style={({ pressed }) => [s.option, { opacity: disabled ? .4 : pressed ? .6 : 1 }]}><View style={s.optionIcon}><Ionicons name={icon} size={23} color={colors.accent} /></View><View style={{ flex: 1, gap: 4 }}><Text style={s.optionTitle}>{title}</Text><Text style={s.optionDescription}>{description}</Text></View><Ionicons name="chevron-forward" color={colors.muted} size={18} /></Pressable>;
+}
+
+export function SettingsScreen() {
+  const experience = useExperienceStore();
+  const sleepTimerEndAt = usePlayerStore(s => s.sleepTimerEndAt);
+  const sleepAtEndOfTrack = usePlayerStore(s => s.sleepAtEndOfTrack);
+  const playbackRate = usePlayerStore(s => s.playbackRate);
+  const volume = usePlayerStore(s => s.volume);
+  const reducedMotion = usePlayerStore(s => s.reducedMotion);
+  const setSleepTimer = usePlayerStore(s => s.setSleepTimer);
+  const setSleepAtEndOfTrack = usePlayerStore(s => s.setSleepAtEndOfTrack);
+  const setPlaybackRate = usePlayerStore(s => s.setPlaybackRate);
+  const setVolume = usePlayerStore(s => s.setVolume);
+  const setReducedMotion = usePlayerStore(s => s.setReducedMotion);
+  const clearHistory = usePlayerStore(s => s.clearHistory);
+  const notify = useUIStore(s => s.notify);
+  const [now, setNow] = useState(() => Date.now());
+  const [clearing, setClearing] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => { if (!sleepTimerEndAt) return; const interval = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(interval); }, [sleepTimerEndAt]);
+  const remaining = Math.max(0, Math.ceil(((sleepTimerEndAt || 0) - now) / 1000));
+  const countdown = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`;
+  const transfer = async (kind: 'export' | 'import' | 'audio') => {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      if (kind === 'export') { await exportLibrary(); notify('Backup preparado para compartilhar.'); }
+      else { const count = await (kind === 'audio' ? importLocalTracks() : importLibrary()); if (count > 0) notify(kind === 'audio' ? `${count} músicas importadas para o celular.` : `${count} itens adicionados à biblioteca.`); }
+    } catch (e) { notify(e instanceof Error ? e.message : 'Não foi possível concluir. Tente novamente.'); }
+    finally { setBusy(null); }
+  };
+
+  return <View style={base.screen}><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[base.content, { paddingBottom: 36 }]}>
+    <View style={base.header}><IconButton name="arrow-back" label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} /><Text style={[base.title, { fontSize: 27 }]}>Configurações</Text></View>
+    <View style={s.intro}><Ionicons name="options-outline" color={colors.accent} size={27} /><View style={{ flex: 1, gap: 6 }}><Text style={s.introTitle}>Do seu jeito.</Text><Text style={base.subtitle}>Ajuste a reprodução e cuide da sua coleção.</Text></View></View>
+    {Constants.executionEnvironment === 'storeClient' && <Section title="PRÉVIA NO EXPO GO"><View style={s.setting}><Text style={s.optionDescription}>A notificação e os controles com a tela bloqueada devem ser testados no APK instalado do Hueco Sound.</Text></View></Section>}
+    <Section title="TRANSIÇÕES ENTRE MÚSICAS">
+      <View style={s.setting}><Text style={s.optionTitle}>Como o som muda</Text><Text style={s.optionDescription}>Direta mantém o volume. Fade aumenta o volume na entrada e reduz ao final da faixa; as músicas não se sobrepõem.</Text><View style={s.wrapChips}><Chip label="Direta" active={experience.audioTransition === 'direct'} onPress={() => experience.configure({ audioTransition: 'direct' })} /><Chip label="Fade" active={experience.audioTransition === 'fade'} onPress={() => experience.configure({ audioTransition: 'fade' })} /></View></View>
+      {experience.audioTransition === 'fade' && <><View style={s.setting}><Text style={s.optionTitle}>Duração do fade</Text><View style={s.wrapChips}>{[1, 2, 3, 5, 8].map(seconds => <Chip key={seconds} label={`${seconds} s`} active={experience.transitionSeconds === seconds} onPress={() => experience.configure({ transitionSeconds: seconds })} />)}</View></View><View style={s.setting}><Text style={s.optionTitle}>Curva do volume</Text><View style={s.wrapChips}><Chip label="Suave" active={experience.fadeCurve === 'smooth'} onPress={() => experience.configure({ fadeCurve: 'smooth' })} /><Chip label="Linear" active={experience.fadeCurve === 'linear'} onPress={() => experience.configure({ fadeCurve: 'linear' })} /></View></View></>}
+    </Section>
+    <Section title="PRECISA DE AJUDA?"><Pressable accessibilityRole="button" onPress={() => { const p = usePlayerStore.getState(); void Share.share({ message: JSON.stringify({ app: 'Hueco Sound 1.2.0', ambiente: Constants.executionEnvironment, faixa: p.currentTrack ? { id: p.currentTrack.id, titulo: p.currentTrack.title } : null, fila: p.queue.length, indice: p.currentIndex, tocando: p.isPlaying, carregando: p.isLoading, erro: p.error?.replace(/https?:\/\/[^\s]+/g, '[endereço omitido]') }, null, 2) }).catch(() => notify('Não foi possível abrir o diagnóstico.')); }} style={s.setting}><Text style={s.optionTitle}>Compartilhar diagnóstico de reprodução</Text><Text style={s.optionDescription}>Gera um resumo da faixa, fila e último erro, sem senhas nem URLs de áudio.</Text></Pressable></Section>
+    <Section title="REPRODUÇÃO">
+      <View style={s.setting}><Text style={s.optionTitle}>Velocidade</Text><Text style={s.optionDescription}>Ajuste o ritmo do áudio.</Text><View style={s.wrapChips}>{[.75, 1, 1.25, 1.5, 2].map(rate => <Chip key={rate} label={`${rate}×`} active={playbackRate === rate} onPress={() => setPlaybackRate(rate)} />)}</View></View>
+      <View style={s.setting}><View style={s.between}><Text style={s.optionTitle}>Volume do aplicativo</Text><Text style={s.value}>{Math.round(volume * 100)}%</Text></View><View style={s.volumeRow}><IconButton name="volume-low-outline" label="Diminuir volume em 10%" disabled={volume <= 0} onPress={() => setVolume(Math.max(0, Math.round((volume - .1) * 10) / 10))} /><View style={s.volumeTrack}><View style={[s.volumeFill, { width: `${volume * 100}%` }]} /></View><IconButton name="volume-high-outline" label="Aumentar volume em 10%" disabled={volume >= 1} onPress={() => setVolume(Math.min(1, Math.round((volume + .1) * 10) / 10))} /></View></View>
+    </Section>
+    <Section title="TEMPORIZADOR">
+      <View style={s.setting}><View style={s.between}><Text style={s.optionTitle}>Durma ouvindo</Text><Ionicons name="moon-outline" color={colors.accent} size={23} /></View><Text accessibilityLiveRegion="polite" style={s.optionDescription}>{sleepTimerEndAt ? `A reprodução pausa em ${countdown}.` : sleepAtEndOfTrack ? 'A reprodução pausa ao terminar a música atual.' : 'Escolha quando pausar a reprodução.'}</Text><View style={s.wrapChips}>{[15, 30, 45, 60].map(minutes => <Chip key={minutes} label={`${minutes} min`} onPress={() => { setNow(Date.now()); setSleepTimer(minutes); notify(`Temporizador definido para ${minutes} minutos.`); }} />)}{(sleepTimerEndAt || sleepAtEndOfTrack) && <Chip label="Desativar" active onPress={() => { setSleepTimer(null); setSleepAtEndOfTrack(false); notify('Temporizador desativado.'); }} />}</View></View>
+      <View style={s.switchRow}><View style={{ flex: 1, gap: 5 }}><Text style={s.optionTitle}>Ao final desta música</Text><Text style={s.optionDescription}>Pausa quando a faixa atual terminar.</Text></View><Switch accessibilityLabel="Pausar ao final desta música" value={sleepAtEndOfTrack} onValueChange={setSleepAtEndOfTrack} trackColor={{ false: colors.elevated, true: '#577441' }} thumbColor={sleepAtEndOfTrack ? colors.accent : colors.muted} /></View>
+    </Section>
+    <Section title="APARÊNCIA">
+      <View style={s.setting}><Text style={s.optionTitle}>Animação das capas e telas</Text><View style={s.wrapChips}>{([{ value: 'slide', label: 'Deslizar' }, { value: 'fade', label: 'Dissolver' }, { value: 'zoom', label: 'Zoom' }, { value: 'none', label: 'Sem animação' }] as const).map(option => <Chip key={option.value} label={option.label} active={experience.visualTransition === option.value} onPress={() => experience.configure({ visualTransition: option.value })} />)}</View></View>
+      {([{ key: 'glassEnabled', title: 'Vidro e desfoque', description: 'Brilho translúcido nos cartões e capa desfocada no player.' }, { key: 'visualizerEnabled', title: 'Ondas animadas', description: 'Animação decorativa durante a reprodução, sem analisar o áudio.' }, { key: 'spritesEnabled', title: 'Personagens', description: 'Mostra os personagens nos cartões do Hueco Sound.' }] as const).map(option => <View key={option.key} style={s.switchRow}><View style={{ flex: 1, gap: 5 }}><Text style={s.optionTitle}>{option.title}</Text><Text style={s.optionDescription}>{option.description}</Text></View><Switch accessibilityLabel={option.title} value={experience[option.key]} onValueChange={value => experience.configure({ [option.key]: value })} trackColor={{ false: colors.elevated, true: '#237b69' }} thumbColor={experience[option.key] ? colors.accent : colors.muted} /></View>)}
+      <View style={s.switchRow}><View style={{ flex: 1, gap: 5 }}><Text style={s.optionTitle}>Reduzir movimento</Text><Text style={s.optionDescription}>Transições mais discretas entre os controles.</Text></View><Switch accessibilityLabel="Reduzir movimento nas animações" value={reducedMotion} onValueChange={setReducedMotion} trackColor={{ false: colors.elevated, true: '#577441' }} thumbColor={reducedMotion ? colors.accent : colors.muted} /></View>
+    </Section>
+    <Section title="SUA BIBLIOTECA">
+      <Option title={busy === 'audio' ? 'Importando músicas…' : 'Importar áudio do aparelho'} description="Adicione arquivos para ouvir também sem conexão." icon="phone-portrait-outline" disabled={!!busy} onPress={() => void transfer('audio')} />
+      <Option title="Conta e sincronização" description="Entre na sua conta Liner e sincronize sua biblioteca." icon="person-circle-outline" onPress={() => router.push('/account')} />
+      <Option title={busy === 'export' ? 'Preparando backup…' : 'Exportar biblioteca'} description="Salve playlists e curtidas. O backup não inclui os arquivos de áudio." icon="share-outline" disabled={!!busy} onPress={() => void transfer('export')} />
+      <Option title={busy === 'import' ? 'Importando biblioteca…' : 'Importar backup'} description="Adicione playlists e curtidas de um backup do Liner." icon="download-outline" disabled={!!busy} onPress={() => void transfer('import')} />
+      <Option title="Limpar histórico" description="Apague músicas recentes e buscas deste aparelho." icon="trash-outline" onPress={() => setClearing(true)} />
+    </Section>
+    <Section title="HUECO SOUND"><Option title="Sobre, créditos e termos" description="ZhyrSnow, projeto Liner, privacidade e licenças." icon="information-circle-outline" onPress={() => router.push('/about')} /></Section>
+    <View style={s.footer}><HuecoLogo width={200} /><Text style={s.footerText}>ZhyrSnow · Hueco Sound 1.2.0</Text></View>
+  </ScrollView><ConfirmDialog visible={clearing} title="Limpar histórico?" description="As músicas recentes e o histórico de busca serão apagados. Suas playlists e curtidas continuam salvas." confirmLabel="Limpar" onClose={() => setClearing(false)} onConfirm={() => { clearHistory(); void AsyncStorage.removeItem('@liner_search_history_v1').catch(() => undefined); setClearing(false); notify('Histórico limpo.'); }} /></View>;
+}
+
+const s = StyleSheet.create({
+  intro: { flexDirection: 'row', alignItems: 'center', gap: 17, marginHorizontal: 20, backgroundColor: '#12312e', borderRadius: 20, padding: 20, marginBottom: 8 },
+  introTitle: { color: colors.text, fontSize: 24, fontWeight: '800', letterSpacing: -.5 },
+  section: { marginHorizontal: 20, marginTop: 26 },
+  sectionTitle: { color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.8, marginBottom: 12, paddingLeft: 4 },
+  card: { borderRadius: 18, overflow: 'hidden' },
+  setting: { padding: 18, gap: 9, borderBottomWidth: 1, borderBottomColor: colors.border },
+  option: { flexDirection: 'row', alignItems: 'center', padding: 17, gap: 13, borderBottomWidth: 1, borderBottomColor: colors.border, minHeight: 90 },
+  optionIcon: { width: 38, alignItems: 'center', justifyContent: 'center' },
+  optionTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  optionDescription: { color: colors.muted, fontSize: 12, lineHeight: 19 },
+  wrapChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  value: { color: colors.accent, fontSize: 14, fontWeight: '800' },
+  volumeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  volumeTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
+  volumeFill: { height: 5, backgroundColor: colors.accent },
+  switchRow: { padding: 18, flexDirection: 'row', alignItems: 'center', gap: 18, minHeight: 88 },
+  footer: { marginTop: 32, alignItems: 'center', gap: 6 },
+  wordmark: { color: colors.text, fontWeight: '900', fontSize: 32, letterSpacing: -1.7 },
+  footerText: { color: colors.muted, fontSize: 11 },
+});
