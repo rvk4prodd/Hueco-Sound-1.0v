@@ -36,6 +36,7 @@ export function PlaylistScreen() {
   const [importing, setImporting] = useState(false);
   const [downloadingState, setDownloadingState] = useState<{ current: number; total: number } | null>(null);
   const [mixStudioOpen, setMixStudioOpen] = useState(false);
+  const [selectedPairIndex, setSelectedPairIndex] = useState(0);
   const [removingLocal, setRemovingLocal] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState(false);
@@ -107,10 +108,15 @@ export function PlaylistScreen() {
               accessibilityRole="button"
               accessibilityLabel="Abrir mixagem da playlist"
               style={[s.mixButton, playlist.mixSettings?.enabled && s.mixButtonActive]}
-              onPress={() => setMixStudioOpen(true)}
+              onPress={() => {
+                setSelectedPairIndex(0);
+                setMixStudioOpen(true);
+              }}
             >
               <Ionicons name="options-outline" size={16} color={playlist.mixSettings?.enabled ? '#000' : colors.accent} />
-              <Text style={[s.mixButtonText, playlist.mixSettings?.enabled && s.mixButtonTextActive]}>Mix</Text>
+              <Text style={[s.mixButtonText, playlist.mixSettings?.enabled && s.mixButtonTextActive]}>
+                {playlist.mixSettings?.enabled ? 'Com Mix' : 'Sem Mix'}
+              </Text>
             </Pressable>
           )}
           {id === 'recent' && tracks.length > 0 && <IconButton name="trash-outline" label="Limpar histórico" onPress={() => setDeleting(true)} />}
@@ -121,7 +127,62 @@ export function PlaylistScreen() {
       {editing && id === 'device' && <View style={s.editPanel}><Text style={s.editTitle}>Arquivos do aparelho</Text><Text style={base.subtitle}>Remova da coleção os arquivos que não quiser mais ouvir por aqui.</Text></View>}
       {tracks.length > 0 && <View style={base.inputWrap}><Ionicons name="search" color={colors.muted} size={19} /><TextInput accessibilityLabel="Buscar nesta playlist" style={base.input} value={filter} onChangeText={setFilter} placeholder="Buscar nesta playlist" placeholderTextColor={colors.muted} />{!!filter && <IconButton name="close" label="Limpar busca na playlist" onPress={() => setFilter('')} />}</View>}
     </>}
-    renderItem={({ item, index }) => { const originalIndex = tracks.findIndex(t => t.id === item.id); return <View><SongRow track={item} index={index + 1} playlistId={!isFixed ? id : undefined} onPress={() => void playTrack(item, filtered)} rightAccessory={editing && id === 'device' ? <IconButton name="remove-circle-outline" color={colors.danger} label={`Remover ${item.title} da coleção local`} onPress={() => setRemovingLocal({ id: item.id, title: item.title })} /> : undefined} />{editing && !isFixed && <View style={s.trackEdit}><View style={s.moveButtons}><IconButton name="arrow-up" label={`Mover ${item.title} para cima`} disabled={originalIndex === 0} onPress={() => moveTrack(id, originalIndex, originalIndex - 1)} /><IconButton name="arrow-down" label={`Mover ${item.title} para baixo`} disabled={originalIndex === tracks.length - 1} onPress={() => moveTrack(id, originalIndex, originalIndex + 1)} /></View><Pressable accessibilityRole="button" accessibilityLabel={`Remover ${item.title} desta playlist`} onPress={() => { removeTrack(id, item.id); notify('Música removida da playlist.'); }} style={s.remove}><Ionicons name="remove-circle-outline" color={colors.danger} size={18} /><Text style={s.removeText}>Remover</Text></Pressable></View>}</View>; }}
+    renderItem={({ item, index }) => {
+      const originalIndex = tracks.findIndex(t => t.id === item.id);
+      return (
+        <View key={item.id}>
+          <SongRow
+            track={item}
+            index={index + 1}
+            playlistId={!isFixed ? id : undefined}
+            onPress={() => void playTrack(item, filtered)}
+            rightAccessory={editing && id === 'device' ? <IconButton name="remove-circle-outline" color={colors.danger} label={`Remover ${item.title} da coleção local`} onPress={() => setRemovingLocal({ id: item.id, title: item.title })} /> : undefined}
+          />
+          {!editing && !isFixed && playlist?.mixSettings?.enabled && index < filtered.length - 1 && (
+            <View style={s.bridgeContainer}>
+              <View style={s.bridgeLine} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Configurar transição entre ${item.title} e ${filtered[index + 1]?.title}`}
+                onPress={() => {
+                  setSelectedPairIndex(index);
+                  setMixStudioOpen(true);
+                }}
+                style={({ pressed }) => [s.bridgePill, pressed && { opacity: 0.75, transform: [{ scale: 0.98 }] }]}
+              >
+                <Ionicons name="git-merge-outline" size={12} color={colors.accent} />
+                <Text style={s.bridgeText}>
+                  {(() => {
+                    const nextTrack = filtered[index + 1];
+                    const pairKey = `${item.id}->${nextTrack?.id}`;
+                    const conf = (playlist.mixSettings?.customTransitions && playlist.mixSettings.customTransitions[pairKey]) || playlist.mixSettings?.defaultConfig;
+                    const sec = conf?.durationSeconds ?? 4;
+                    const presetLabel = conf?.preset === 'auto' ? 'AUTOMIX' : conf?.preset === 'fade' ? 'CROSSFADE' : conf?.preset === 'rise' ? 'CRESCENDO' : conf?.preset === 'blend' ? 'BLEND' : 'MIX';
+                    return `${sec}s • ${presetLabel}`;
+                  })()}
+                </Text>
+                <View style={s.bridgeBadge}>
+                  <Text style={s.bridgeBadgeText}>Mix</Text>
+                </View>
+              </Pressable>
+              <View style={s.bridgeLine} />
+            </View>
+          )}
+          {editing && !isFixed && (
+            <View style={s.trackEdit}>
+              <View style={s.moveButtons}>
+                <IconButton name="arrow-up" label={`Mover ${item.title} para cima`} disabled={originalIndex === 0} onPress={() => moveTrack(id, originalIndex, originalIndex - 1)} />
+                <IconButton name="arrow-down" label={`Mover ${item.title} para baixo`} disabled={originalIndex === tracks.length - 1} onPress={() => moveTrack(id, originalIndex, originalIndex + 1)} />
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Remover ${item.title} desta playlist`} onPress={() => { removeTrack(id, item.id); notify('Música removida da playlist.'); }} style={s.remove}>
+                <Ionicons name="remove-circle-outline" color={colors.danger} size={18} />
+                <Text style={s.removeText}>Remover</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      );
+    }}
     ListEmptyComponent={<EmptyState title={filter ? 'Nenhuma música com esse nome' : id === 'liked' ? 'Guarde suas favoritas' : id === 'recent' ? 'Seu próximo play fica aqui' : id === 'device' ? 'Sua música também offline' : 'Essa playlist é toda sua'} description={filter ? 'Tente outro título ou artista.' : id === 'liked' ? 'Toque no coração de uma música para encontrá-la aqui sempre que quiser.' : id === 'recent' ? 'As músicas que você ouvir aparecem neste histórico.' : id === 'device' ? 'Importe arquivos de áudio do aparelho para ouvir quando quiser.' : 'Adicione músicas pela busca. Depois, organize do seu jeito.'} action={filter ? 'Limpar busca' : importing ? 'Importando…' : id === 'device' ? 'Importar áudio' : 'Adicionar músicas'} onAction={() => filter ? setFilter('') : add()} />}
     ListFooterComponent={!isFixed && tracks.length > 0 ? <View style={s.addMore}><ActionButton secondary icon="add" label="Adicionar músicas" onPress={add} /></View> : undefined}
   />
@@ -132,6 +193,7 @@ export function PlaylistScreen() {
     <PlaylistMixStudio
       visible={mixStudioOpen}
       playlist={playlist}
+      initialPairIndex={selectedPairIndex}
       onClose={() => setMixStudioOpen(false)}
       onSave={settings => {
         updatePlaylistMixSettings(playlist.id, settings);
@@ -196,4 +258,46 @@ const s = StyleSheet.create({
   remove: { flexDirection: 'row', gap: 7, minHeight: 44, alignItems: 'center', paddingHorizontal: 8 },
   removeText: { color: colors.danger, fontSize: 12, fontWeight: '700' },
   addMore: { padding: 20, alignItems: 'flex-start' },
+  bridgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 20,
+  },
+  bridgeLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  bridgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#18181c',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginHorizontal: 8,
+  },
+  bridgeText: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  bridgeBadge: {
+    backgroundColor: 'rgba(45, 212, 191, 0.18)',
+    paddingVertical: 1.5,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+  },
+  bridgeBadgeText: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
 });

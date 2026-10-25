@@ -16,10 +16,10 @@ export interface LyricLine {
   synced?: boolean;
 }
 
-export type MixVolumeType = 'overlap' | 'fade' | 'cut';
-export type MixEQType = 'end_bass_swap' | 'center_bass_swap' | 'flat';
-export type MixEffectType = 'echo' | 'low_pass' | 'reverb' | 'none';
-export type MixPreset = 'auto' | 'fade' | 'rise' | 'blend';
+export type MixVolumeType = 'overlap' | 'fade' | 'cut' | 'equal_power' | 'linear';
+export type MixEQType = 'end_bass_swap' | 'center_bass_swap' | 'early_bass_swap' | 'bass_cut' | 'flat' | 'none';
+export type MixEffectType = 'echo' | 'low_pass' | 'high_pass' | 'reverb' | 'rise' | 'none';
+export type MixPreset = 'auto' | 'custom' | 'fade' | 'rise' | 'blend' | 'bass_drop';
 
 export interface TrackTransitionConfig {
   durationSeconds: number;
@@ -27,6 +27,11 @@ export interface TrackTransitionConfig {
   eq: MixEQType;
   effect: MixEffectType;
   preset: MixPreset;
+  bars?: 2 | 4 | 8 | 16;
+  inPointSec?: number;
+  outPointSec?: number;
+  inCueSec?: number;
+  outCueSec?: number;
 }
 
 export interface PlaylistMixSettings {

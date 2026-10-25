@@ -87,21 +87,23 @@ jobs:
 
       - name: Release APK on GitHub
         uses: softprops/action-gh-release@v2
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           files: output/HuecoSound.apk
-          tag_name: ${{ github.ref_name || format('v1.3.0-build-{0}', github.run_number) }}
-          name: Hueco Sound v1.3.0 (Build #${{ github.run_number }})
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v1.3.1-build-{0}', github.run_number) }}
+          name: Hueco Sound v1.3.1 (Build #${{ github.run_number }})
           body: |
-            ### 🎵 Hueco Sound APK v1.3.0 - Download Direto
+            ### 🎵 Hueco Sound APK v1.3.1 - Download Direto
 
-            - **Versão:** 1.3.0 (Release Standalone)
+            - **Versão:** 1.3.1 (Release Standalone)
             - **Build:** #${{ github.run_number }}
             - **Novidades desta grande atualização:**
-              - **Fim da 'Paradinha' / Gapless Nativo Perfeito:** Reprodução 100% contínua e sem interrupções entre as músicas da fila ou repetição de playlist.
-              - **Estúdio de Mixagem Estilo Spotify (`[🎚️ Mix]`):** Disponível em qualquer playlist! Personalize transições entre cada par de faixas com onda dupla (dual waveform), curvas de volume (Crossfade, Sobrepor, Corte rápido), troca de graves EQ (No centro, No final, Planos), e efeitos (Eco/Delay, Filtro passa-baixa, Reverberação).
-              - **Download de Playlist Completa Offline:** Baixe todas as faixas de qualquer playlist de uma vez com um toque para ouvir offline em "Neste celular", com indicador de progresso.
-              - **Personalização Visual Total & Efeito Glass:** Suporte a planos de fundo com temas vibrantes (Cyberpunk Neon, Noite Estrelada, Aurora Glass) ou escolha sua própria foto da galeria com efeito translúcido de vidro e controle de desfoque.
-              - **Build Ultra-Rápido no GitHub Actions:** Caching de Gradle e compilação paralela para gerar novos APKs com tempo de espera reduzido.
+              - **Estúdio de Mixagem Estilo Spotify Completo em Mobile:** Formas de onda com frequências coloridas, o quadradinho arrastável dinâmico com segundos exatos em tempo real. A música de saída (A) inicia no final dela (arraste para a esquerda para voltar no tempo), e a de entrada (B) inicia no início dela (arraste para a direita para avançar). Ajuste fino por botões `−` e `+`.
+              - **Pontes de Transição nas Playlists:** Link interativo entre cada música da playlist (`[ 4s • AUTOMIX Mix ]`) abrindo diretamente o editor de transição entre as duas faixas.
+              - **Notificação Nativa Samsung One UI & Suporte a Fones Bluetooth:**
+                - Integração com Media3 `MediaSessionService` e `MediaStyle` nativa do Android para o reprodutor Samsung One UI na central de notificações e tela de bloqueio.
+                - Suporte a comandos de fone de ouvido Bluetooth (AVRCP): passar música, voltar música, pausar e retomar.
+                - Permissões completas de `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` e Bluetooth.
+              - **Gapless Nativo & Downloads Offline:** Reprodução 100% contínua e download completo de playlists para ouvir em qualquer lugar sem internet.
           draft: false
           prerelease: false

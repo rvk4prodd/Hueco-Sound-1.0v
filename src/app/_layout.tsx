@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Image, View, StyleSheet, Platform } from 'react-native';
+import { ActivityIndicator, Image, View, StyleSheet, Platform, PermissionsAndroid } from 'react-native';
 import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -38,6 +38,13 @@ export default function RootLayout() {
   useEffect(() => {
     void initializeAccount().catch(() => useUIStore.getState().notify('Não foi possível restaurar sua conta. Entre novamente nas configurações.'));
     void (async () => {
+      if (Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 33) {
+        try {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        } catch {
+          // ignore if denied or unavailable
+        }
+      }
       if (Platform.OS !== 'web') {
         try { await useDeviceLibraryStore.getState().loadSavedData(); }
         catch { useUIStore.getState().notify('Não foi possível carregar os arquivos do aparelho.'); }
