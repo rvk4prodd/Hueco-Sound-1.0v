@@ -1,5 +1,6 @@
-import React, { useMemo, useState, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -9,6 +10,10 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { createAudioPlayer } from 'expo-audio';
+import type { AudioPlayer } from 'expo-audio';
+import { resolveAudioStream } from '../api/innertube';
+import { calculateCrossfadeFactors } from '../player/transitions';
 import type {
   MixEQType,
   MixEffectType,
@@ -130,6 +135,39 @@ export function PlaylistMixStudio({
   const [customTransitions, setCustomTransitions] = useState<Record<string, TrackTransitionConfig>>(initialSettings.customTransitions || {});
   const [selectedPairIndex, setSelectedPairIndex] = useState<number | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewPlayheadSec, setPreviewPlayheadSec] = useState<number | null>(null);
+  const previewAudioA = useRef<AudioPlayer | null>(null);
+  const previewAudioB = useRef<AudioPlayer | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const previewAbort = useRef<AbortController | null>(null);
+
+  const stopPreview = useCallback(() => {
+    if (previewAbort.current) {
+      previewAbort.current.abort();
+      previewAbort.current = null;
+    }
+    if (previewTimer.current) {
+      clearInterval(previewTimer.current);
+      previewTimer.current = null;
+    }
+    if (previewAudioA.current) {
+      try { previewAudioA.current.pause(); } catch {}
+      try { previewAudioA.current.release(); } catch {}
+      try { previewAudioA.current.remove(); } catch {}
+      previewAudioA.current = null;
+    }
+    if (previewAudioB.current) {
+      try { previewAudioB.current.pause(); } catch {}
+      try { previewAudioB.current.release(); } catch {}
+      try { previewAudioB.current.remove(); } catch {}
+      previewAudioB.current = null;
+    }
+    setPreviewPlaying(false);
+    setPreviewLoading(false);
+    setPreviewPlayheadSec(null);
+  }, []);
+
   const [activeDrawer, setActiveDrawer] = useState<'volume' | 'eq' | 'effect' | 'bars' | null>(null);
 
   const numTransitions = Math.max(0, tracks.length - 1);
@@ -189,6 +227,89 @@ export function PlaylistMixStudio({
     updateInPoint(effectiveInPoint + dir);
   };
 
+  const startPreview = useCallback(async () => {
+    if (!trackA || !trackB) return;
+    stopPreview();
+
+    const abort = new AbortController();
+    previewAbort.current = abort;
+    setPreviewLoading(true);
+    setPreviewPlaying(true);
+
+    try {
+      const [urlA, urlB] = await Promise.all([
+        trackA.streamUrl || resolveAudioStream(trackA.id, trackA.title, trackA.artists, { durationMs: trackA.durationMs, signal: abort.signal }),
+        trackB.streamUrl || resolveAudioStream(trackB.id, trackB.title, trackB.artists, { durationMs: trackB.durationMs, signal: abort.signal }),
+      ]);
+
+      if (abort.signal.aborted) return;
+
+      const pA = createAudioPlayer({ uri: urlA }, { updateInterval: 30 });
+      const pB = createAudioPlayer({ uri: urlB }, { updateInterval: 30 });
+      previewAudioA.current = pA;
+      previewAudioB.current = pB;
+
+      const startSecA = Math.max(0, effectiveOutPoint - 3);
+      pA.volume = 1.0;
+      await pA.seekTo(startSecA);
+
+      pB.volume = 0.0;
+      await pB.seekTo(effectiveInPoint);
+
+      if (abort.signal.aborted) return;
+      setPreviewLoading(false);
+      pA.play();
+
+      let bStarted = false;
+      const startTime = Date.now();
+      const crossfadeTotalMs = durationSec * 1000;
+      const leadInMs = (effectiveOutPoint - startSecA) * 1000;
+      const postDropMs = 3000;
+      const totalDurationMs = leadInMs + crossfadeTotalMs + postDropMs;
+
+      previewTimer.current = setInterval(() => {
+        if (abort.signal.aborted) {
+          stopPreview();
+          return;
+        }
+
+        const elapsed = Date.now() - startTime;
+        const currentSecA = startSecA + elapsed / 1000;
+        setPreviewPlayheadSec(currentSecA);
+
+        if (elapsed >= leadInMs && !bStarted) {
+          bStarted = true;
+          try { pB.play(); } catch {}
+        }
+
+        if (elapsed >= leadInMs && elapsed < leadInMs + crossfadeTotalMs) {
+          const crossfadeProgress = (elapsed - leadInMs) / crossfadeTotalMs;
+          const { outFactor, inFactor } = calculateCrossfadeFactors(crossfadeProgress, currentConfig.volume || 'overlap');
+          try {
+            pA.volume = Math.max(0, Math.min(1, outFactor));
+            pB.volume = Math.max(0, Math.min(1, inFactor));
+          } catch {}
+        } else if (elapsed >= leadInMs + crossfadeTotalMs) {
+          try {
+            pA.volume = 0;
+            pA.pause();
+            pB.volume = 1.0;
+          } catch {}
+        }
+
+        if (elapsed >= totalDurationMs) {
+          stopPreview();
+        }
+      }, 30);
+    } catch {
+      stopPreview();
+    }
+  }, [trackA, trackB, effectiveOutPoint, effectiveInPoint, durationSec, currentConfig.volume, stopPreview]);
+
+  useEffect(() => {
+    return () => { stopPreview(); };
+  }, [stopPreview]);
+
   const applyPreset = (preset: MixPreset) => {
     const found = PRESETS.find(p => p.id === preset);
     if (!found) return;
@@ -196,6 +317,7 @@ export function PlaylistMixStudio({
   };
 
   const handleSave = () => {
+    stopPreview();
     onSave({
       enabled,
       defaultConfig,
@@ -248,12 +370,33 @@ export function PlaylistMixStudio({
   // Dragging right increases progressB -> box moves right towards 40%
   const boxLeftPercent_B = 4 + progressB * 36;
 
+  const viewSpanSec = 20;
+  const startSecA = Math.max(0, effectiveOutPoint - (viewSpanSec - durationSec) / 2);
+  const startSecB = Math.max(0, effectiveInPoint - (viewSpanSec - durationSec) / 2);
+
+  const playheadPercentA = previewPlayheadSec !== null
+    ? Math.max(0, Math.min(100, ((previewPlayheadSec - startSecA) / viewSpanSec) * 100))
+    : null;
+
+  const currentSecB = previewPlayheadSec !== null
+    ? effectiveInPoint + Math.max(0, previewPlayheadSec - effectiveOutPoint)
+    : null;
+
+  const playheadPercentB = currentSecB !== null
+    ? Math.max(0, Math.min(100, ((currentSecB - startSecB) / viewSpanSec) * 100))
+    : null;
+
+  const handleClose = () => {
+    stopPreview();
+    onClose();
+  };
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <View style={s.container}>
         {/* Top Header */}
         <View style={s.header}>
-          <IconButton name="close" label="Fechar estúdio de mixagem" onPress={onClose} />
+          <IconButton name="close" label="Fechar estúdio de mixagem" onPress={handleClose} />
           <View style={s.tabSwitcher}>
             <Pressable
               onPress={() => setActiveTab('automix')}
@@ -426,6 +569,13 @@ export function PlaylistMixStudio({
                       {/* Cyan Volume curve line inside box */}
                       <View style={[s.curveLineVisual, { backgroundColor: '#00c8ff' }]} />
                     </View>
+
+                    {/* Cyan Playhead Line for Preview A */}
+                    {playheadPercentA !== null && (
+                      <View style={[s.playheadLine, { left: `${playheadPercentA}%`, borderLeftColor: '#00c8ff' }]}>
+                        <View style={[s.playheadCap, { backgroundColor: '#00c8ff' }]} />
+                      </View>
+                    )}
                   </View>
                 </View>
 
@@ -454,15 +604,21 @@ export function PlaylistMixStudio({
 
                   {/* Play/Stop Preview Center Button */}
                   <Pressable
-                    onPress={() => setPreviewPlaying(v => !v)}
+                    accessibilityRole="button"
+                    accessibilityLabel={previewPlaying ? "Pausar prévia da transição" : "Ouvir prévia da transição"}
+                    onPress={() => previewPlaying ? stopPreview() : void startPreview()}
                     style={({ pressed }) => [s.previewCenterBtn, pressed && { transform: [{ scale: 0.95 }] }]}
                   >
-                    <Ionicons
-                      name={previewPlaying ? 'stop' : 'play'}
-                      size={18}
-                      color="#fff"
-                      style={!previewPlaying ? { marginLeft: 2 } : undefined}
-                    />
+                    {previewLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons
+                        name={previewPlaying ? 'stop' : 'play'}
+                        size={18}
+                        color="#fff"
+                        style={!previewPlaying ? { marginLeft: 2 } : undefined}
+                      />
+                    )}
                   </Pressable>
 
                   <Pressable
@@ -564,6 +720,13 @@ export function PlaylistMixStudio({
                       {/* Green Volume curve line inside box */}
                       <View style={[s.curveLineVisual, { backgroundColor: '#1ed760' }]} />
                     </View>
+
+                    {/* Green Playhead Line for Preview B */}
+                    {playheadPercentB !== null && previewPlayheadSec !== null && previewPlayheadSec >= effectiveOutPoint && (
+                      <View style={[s.playheadLine, { left: `${playheadPercentB}%`, borderLeftColor: '#1ed760' }]}>
+                        <View style={[s.playheadCap, { backgroundColor: '#1ed760' }]} />
+                      </View>
+                    )}
                   </View>
                 </View>
               </GlassCard>
@@ -1076,6 +1239,23 @@ const s = StyleSheet.create({
     bottom: 8,
     height: 2,
     borderRadius: 1,
+  },
+  playheadLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    borderLeftWidth: 2,
+    zIndex: 10,
+    pointerEvents: 'none',
+  },
+  playheadCap: {
+    position: 'absolute',
+    top: -2,
+    left: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   centerControlsRow: {
     flexDirection: 'row',

@@ -11,7 +11,8 @@ import { Track } from '../types';
 import { colors } from '../theme';
 import { Chip, Cover, EmptyState, IconButton, screenStyles as base } from './ScreenParts';
 
-const HISTORY_KEY = '@liner_search_history_v1';
+const HISTORY_KEY = '@hueco_search_history_v1';
+const LEGACY_HISTORY_KEY = '@liner_search_history_v1';
 const EMPTY_TRACKS: Track[] = [];
 const GENRES = [
   { name: 'Trap Brasil', caption: 'Novos sons, novas ondas', color: '#554481', icon: 'planet' },
@@ -56,10 +57,11 @@ function SearchContent({ initialQuery, playlistId }: { initialQuery: string; pla
 
   useFocusEffect(useCallback(() => {
     let active = true;
-    void AsyncStorage.getItem(HISTORY_KEY).then(value => {
+    void AsyncStorage.getItem(HISTORY_KEY).then(async value => {
       if (!active) return;
-      if (!value) { historyRef.current = []; setHistory([]); return; }
-      const parsed: unknown = JSON.parse(value);
+      const effective = value || await AsyncStorage.getItem(LEGACY_HISTORY_KEY);
+      if (!effective) { historyRef.current = []; setHistory([]); return; }
+      const parsed: unknown = JSON.parse(effective);
       if (Array.isArray(parsed)) { const next = parsed.filter((v): v is string => typeof v === 'string').slice(0, 8); historyRef.current = next; setHistory(next); }
     }).catch(() => undefined);
     return () => { active = false; };

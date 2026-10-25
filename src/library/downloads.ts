@@ -56,7 +56,7 @@ async function performDownload(track: Track): Promise<void> {
     if (!/^https?:\/\//i.test(url)) throw new Error("Esta fonte não oferece um arquivo para download.");
     if (/\.m3u8(?:$|[?#])|\/manifest\/(?:hls|dash)|\.mpd(?:$|[?#])/i.test(url)) throw new Error(UNSUPPORTED);
     await inspectHeaders(url, controller.signal);
-    const directory = new Directory(Paths.document, "liner-downloads");
+    const directory = new Directory(Paths.document, "hueco-downloads");
     directory.create({ idempotent: true, intermediates: true });
     const stem = `audio-${track.id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     output = new File(directory, `${stem}.part`);

@@ -166,14 +166,14 @@ export function SettingsScreen() {
     </Section>
     <Section title="SUA BIBLIOTECA">
       <Option title={busy === 'audio' ? 'Importando músicas…' : 'Importar áudio do aparelho'} description="Adicione arquivos para ouvir também sem conexão." icon="phone-portrait-outline" disabled={!!busy} onPress={() => void transfer('audio')} />
-      <Option title="Conta e sincronização" description="Entre na sua conta Liner e sincronize sua biblioteca." icon="person-circle-outline" onPress={() => router.push('/account')} />
-      <Option title={busy === 'export' ? 'Preparando backup…' : 'Exportar biblioteca'} description="Salve playlists e curtidas. O backup não inclui os arquivos de áudio." icon="share-outline" disabled={!!busy} onPress={() => void transfer('export')} />
-      <Option title={busy === 'import' ? 'Importando biblioteca…' : 'Importar backup'} description="Adicione playlists e curtidas de um backup do Liner." icon="download-outline" disabled={!!busy} onPress={() => void transfer('import')} />
+      <Option title="Sua coleção e dados" description="Estatísticas locais, backups e armazenamento do aparelho." icon="person-circle-outline" onPress={() => router.push('/account')} />
+      <Option title={busy === 'export' ? 'Preparando backup…' : 'Exportar biblioteca'} description="Salve playlists e curtidas em um arquivo JSON do Hueco Sound." icon="share-outline" disabled={!!busy} onPress={() => void transfer('export')} />
+      <Option title={busy === 'import' ? 'Importando biblioteca…' : 'Importar backup'} description="Adicione playlists e curtidas de um backup do Hueco Sound." icon="download-outline" disabled={!!busy} onPress={() => void transfer('import')} />
       <Option title="Limpar histórico" description="Apague músicas recentes e buscas deste aparelho." icon="trash-outline" onPress={() => setClearing(true)} />
     </Section>
-    <Section title="HUECO SOUND"><Option title="Sobre, créditos e termos" description="ZhyrSnow, projeto Liner, privacidade e licenças." icon="information-circle-outline" onPress={() => router.push('/about')} /></Section>
-    <View style={s.footer}><HuecoLogo width={200} /><Text style={s.footerText}>ZhyrSnow · Hueco Sound 1.3.0</Text></View>
-  </ScrollView><ConfirmDialog visible={clearing} title="Limpar histórico?" description="As músicas recentes e o histórico de busca serão apagados. Suas playlists e curtidas continuam salvas." confirmLabel="Limpar" onClose={() => setClearing(false)} onConfirm={() => { clearHistory(); void AsyncStorage.removeItem('@liner_search_history_v1').catch(() => undefined); setClearing(false); notify('Histórico limpo.'); }} /></View>;
+    <Section title="HUECO SOUND"><Option title="Sobre, créditos e termos" description="ZhyrSnow, identidade e termos do aplicativo." icon="information-circle-outline" onPress={() => router.push('/about')} /></Section>
+    <View style={s.footer}><HuecoLogo width={200} /><Text style={s.footerText}>ZhyrSnow · Hueco Sound 1.3.1</Text></View>
+  </ScrollView><ConfirmDialog visible={clearing} title="Limpar histórico?" description="As músicas recentes e o histórico de busca serão apagados. Suas playlists e curtidas continuam salvas." confirmLabel="Limpar" onClose={() => setClearing(false)} onConfirm={() => { clearHistory(); void AsyncStorage.multiRemove(['@hueco_search_history_v1', '@liner_search_history_v1']).catch(() => undefined); setClearing(false); notify('Histórico limpo.'); }} /></View>;
 }
 
 const s = StyleSheet.create({

@@ -18,8 +18,8 @@ function errorMessage(status: number, code: string): string {
   if (code === 'INVALID_CREDENTIALS') return 'E-mail ou senha incorretos.';
   if (status === 401 || status === 403) return 'Sua sessão não foi autorizada. Entre novamente.';
   if (status === 429) return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
-  if (status >= 500) return 'O servidor do Liner está indisponível. Tente novamente mais tarde.';
-  if (status === 404) return 'Este recurso não está disponível no servidor do Liner.';
+  if (status >= 500) return 'O servidor está indisponível no momento. Tente novamente mais tarde.';
+  if (status === 404) return 'Este recurso não foi encontrado.';
   if (status === 409) return 'Este e-mail ou nome de usuário já está em uso.';
   return 'O servidor não aceitou os dados. Confira os campos e tente novamente.';
 }

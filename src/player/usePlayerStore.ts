@@ -8,6 +8,7 @@ import { finite, LEGACY_LIKES_KEY, LEGACY_RECENTS_KEY, parseSavedData, SavedPlay
 import { useUIStore } from "../ui/useUIStore";
 import { getPlaybackTrack } from "../library/useDeviceLibraryStore";
 import { originalPlaybackSource, preparePlaybackSource } from "./prepareSource";
+import { useExperienceStore } from "../preferences/experience";
 
 export interface PlayerState {
   currentTrack: Track | null;
@@ -17,6 +18,7 @@ export interface PlayerState {
   durationMs: number;
   queue: Track[];
   currentIndex: number;
+  activePlaylistId: string | null;
   shuffle: boolean;
   repeat: boolean;
   repeatMode: RepeatMode;
@@ -35,7 +37,7 @@ export interface PlayerState {
   volume: number;
   reducedMotion: boolean;
   lyricsOffsetMs: number;
-  playTrack: (track: Track, newQueue?: Track[]) => Promise<void>;
+  playTrack: (track: Track, newQueue?: Track[], playlistId?: string) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   seekTo: (positionMs: number) => Promise<void>;
   nextTrack: () => Promise<void>;
@@ -204,6 +206,73 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     return true;
   }
 
+  let auxPreparingTrackId: string | null = null;
+
+  async function checkAndTriggerCrossfade(status: PlaybackStatus, version: number): Promise<void> {
+    if (audioManager.activelyCrossfading || !status.playing || status.duration <= 8) return;
+    const state = get();
+    const currentTrack = state.currentTrack;
+    if (!currentTrack || currentTrack.id !== status.trackId) return;
+    const nextTrack = upcoming()[0];
+    if (!nextTrack || nextTrack.id === currentTrack.id) return;
+
+    const playlist = state.activePlaylistId
+      ? state.playlists.find(p => p.id === state.activePlaylistId)
+      : null;
+    const mixSettings = playlist?.mixSettings;
+
+    let durationSec = 4;
+    let outPointSec = status.duration - 4;
+    let inCueSec = 0;
+    let curve: import('./transitions').CrossfadeCurve = 'overlap';
+    let isTransitionActive = false;
+
+    if (mixSettings?.enabled) {
+      isTransitionActive = true;
+      const pairKey = `${currentTrack.id}->${nextTrack.id}`;
+      const conf = (mixSettings.customTransitions && mixSettings.customTransitions[pairKey]) || mixSettings.defaultConfig || { durationSeconds: 4, volume: 'overlap' };
+      durationSec = conf.durationSeconds || 4;
+      curve = conf.volume || 'overlap';
+      outPointSec = conf.outPointSec !== undefined ? conf.outPointSec : Math.max(0, status.duration - durationSec);
+      inCueSec = conf.inPointSec !== undefined ? conf.inPointSec : (conf.inCueSec ?? 0);
+    } else {
+      const exp = useExperienceStore.getState();
+      if (exp.audioTransition === 'fade') {
+        isTransitionActive = true;
+        durationSec = exp.transitionSeconds || 3;
+        outPointSec = Math.max(0, status.duration - durationSec);
+        inCueSec = 0;
+        curve = exp.fadeCurve || 'smooth';
+      }
+    }
+
+    if (!isTransitionActive || outPointSec <= 0) return;
+
+    // Pre-buffer auxiliary deck 12 seconds in advance
+    if (status.currentTime >= outPointSec - 12 && auxPreparingTrackId !== nextTrack.id) {
+      auxPreparingTrackId = nextTrack.id;
+      void (async () => {
+        try {
+          const url = await streamFor(nextTrack);
+          if (requestVersion !== version) return;
+          await audioManager.prepareAuxTrack(nextTrack, url, inCueSec);
+        } catch {
+          auxPreparingTrackId = null;
+        }
+      })();
+    }
+
+    // Trigger the real simultaneous dual-deck crossfade right at outPointSec
+    if (status.currentTime >= outPointSec) {
+      auxPreparingTrackId = null;
+      void audioManager.executeCrossfade(nextTrack, durationSec, curve, inCueSec, () => {
+        if (requestVersion !== version) return;
+        selectTrack(nextTrack, version);
+        syncUpcoming();
+      });
+    }
+  }
+
   function onStatus(status: PlaybackStatus, version: number): void {
     if (requestVersion !== version || get().currentTrack?.id !== status.trackId) return;
     if (expireSleepTimer()) return;
@@ -224,7 +293,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     const durationMs = status.duration > 0 ? finite(Math.round(status.duration * 1000), state.durationMs) : state.durationMs;
     update({ isPlaying: status.playing, isLoading: status.isBuffering || (!status.isLoaded && desiredPlaying), positionMs, durationMs });
     if (Date.now() - lastCheckpoint > 10_000 || state.isPlaying !== status.playing) { lastCheckpoint = Date.now(); save(); }
+
+    if (!audioManager.activelyCrossfading) {
+      void checkAndTriggerCrossfade(status, version);
+    }
+
     if (status.didJustFinish && lastFinishedTrack !== status.trackId) {
+      if (audioManager.activelyCrossfading) {
+        // Crossfade handover is currently active; do not interrupt!
+        return;
+      }
       lastFinishedTrack = status.trackId;
       if (state.sleepAtEndOfTrack) {
         update({ sleepAtEndOfTrack: false });
@@ -243,17 +321,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     }
   }
 
-  async function startPlayback(track: Track, newQueue?: Track[], freshTraversal = true, forceRefresh = false, restorePosition = 0, initialExclusions: string[] = []): Promise<void> {
+  async function startPlayback(track: Track, newQueue?: Track[], freshTraversal = true, forceRefresh = false, restorePosition = 0, initialExclusions: string[] = [], playlistId?: string): Promise<void> {
     await get().loadSavedData();
     const version = ++requestVersion;
     streamController?.abort();
     streamController = new AbortController();
     audioManager.stop();
     desiredPlaying = true;
+    auxPreparingTrackId = null;
     const existing = get().queue;
     const queue = uniqueTracks(newQueue?.length ? newQueue : existing.some((item) => item.id === track.id) ? existing : [track]);
     if (!queue.some((item) => item.id === track.id)) queue.unshift(track);
-    update({ queue: queue.slice(0, MAX_QUEUE), isLoading: true, isPlaying: false });
+    update({
+      queue: queue.slice(0, MAX_QUEUE),
+      isLoading: true,
+      isPlaying: false,
+      ...(playlistId !== undefined ? { activePlaylistId: playlistId } : {}),
+    });
     if (freshTraversal) { resetTraversal(track); recoveredTrackId = null; }
     selectTrack(track, version);
     try {
@@ -349,11 +433,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
   return {
     currentTrack: null, isPlaying: false, isLoading: false, positionMs: 0, durationMs: 0,
-    queue: [], currentIndex: -1, shuffle: false, repeat: false, repeatMode: "off", isFullscreenOpen: false,
+    queue: [], currentIndex: -1, activePlaylistId: null, shuffle: false, repeat: false, repeatMode: "off", isFullscreenOpen: false,
     likedTrackIds: [], likedTracks: [], recentTracks: [], playlists: [], lyrics: [], isLyricsLoading: false,
     error: null, hydrated: false, sleepTimerEndAt: null, sleepAtEndOfTrack: false, playbackRate: 1, volume: 1, reducedMotion: false, lyricsOffsetMs: 0,
 
-    playTrack: (track, queue) => startPlayback(track, queue),
+    playTrack: (track, queue, playlistId) => startPlayback(track, queue, true, false, 0, [], playlistId),
     togglePlayPause: async () => {
       const state = get();
       if (!state.currentTrack) return;

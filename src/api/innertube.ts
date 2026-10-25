@@ -34,7 +34,7 @@ export function clearApiCaches(): void {
   searchCache.clear(); streamCache.clear(); lyricCache.clear(); visitorCache.clear(); clientIdCache.clear(); metadataCache.clear();
 }
 
-/** Optional server adapter matches the desktop Liner playback contract. */
+/** Optional server adapter configuration for audio playback. */
 export function configureApi(config: ApiConfiguration): void {
   if (config.backendUrl) {
     let url: URL;
@@ -198,7 +198,7 @@ function excludedFormat(url: string, excluded: string[]): boolean {
 }
 
 async function resolveBackendStream(videoId: string, signal: AbortSignal): Promise<string | null> {
-  if (!configuration.getAccessToken) return null;
+  if (!configuration.backendUrl || !configuration.getAccessToken) return null;
   try {
     const token = await configuration.getAccessToken();
     throwIfAborted(signal);

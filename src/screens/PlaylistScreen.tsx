@@ -55,7 +55,7 @@ export function PlaylistScreen() {
     if (id === 'device') { if (importing) return; setImporting(true); void importLocalTracks().then(count => { if (count) notify(`${count} músicas importadas.`); }).catch(e => notify(e instanceof Error ? e.message : 'Não foi possível importar.')).finally(() => setImporting(false)); }
     else router.push({ pathname: '/search', params: !isFixed ? { playlistId: id } : {} });
   };
-  const play = () => { if (active) void togglePlayPause(); else if (filtered.length) void playTrack(filtered[shuffle ? Math.floor(Math.random() * filtered.length) : 0], filtered); };
+  const play = () => { if (active) void togglePlayPause(); else if (filtered.length) void playTrack(filtered[shuffle ? Math.floor(Math.random() * filtered.length) : 0], filtered, !isFixed ? id : undefined); };
 
   const startDownloadAll = () => {
     if (downloadingState || !tracks.length) return;
@@ -135,7 +135,7 @@ export function PlaylistScreen() {
             track={item}
             index={index + 1}
             playlistId={!isFixed ? id : undefined}
-            onPress={() => void playTrack(item, filtered)}
+            onPress={() => void playTrack(item, filtered, !isFixed ? id : undefined)}
             rightAccessory={editing && id === 'device' ? <IconButton name="remove-circle-outline" color={colors.danger} label={`Remover ${item.title} da coleção local`} onPress={() => setRemovingLocal({ id: item.id, title: item.title })} /> : undefined}
           />
           {!editing && !isFixed && playlist?.mixSettings?.enabled && index < filtered.length - 1 && (

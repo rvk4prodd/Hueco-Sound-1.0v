@@ -15,7 +15,6 @@ import { Toast } from '../components/Toast';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { colors } from '../theme';
 import type { TabType } from '../types';
-import { initializeAccount } from '../account/useAccountStore';
 import { useExperienceStore } from '../preferences/experience';
 import { audioManager } from '../player/audioManager';
 
@@ -36,7 +35,6 @@ export default function RootLayout() {
 
   useEffect(() => { audioManager.configureTransition(transition, seconds, curve); }, [transition, seconds, curve]);
   useEffect(() => {
-    void initializeAccount().catch(() => useUIStore.getState().notify('Não foi possível restaurar sua conta. Entre novamente nas configurações.'));
     void (async () => {
       if (Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 33) {
         try {
