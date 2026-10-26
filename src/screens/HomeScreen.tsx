@@ -11,11 +11,41 @@ import { ActionButton, Chip, Cover, EmptyState, IconButton, screenStyles as base
 import { CharacterSprite, HuecoLogo } from '../components/HuecoBrand';
 import { GlassCard } from '../components/GlassCard';
 
-let discoveryCache: { hits: Track[]; discoveries: Track[]; at: number } | null = null;
+const cacheByVibe = new Map<string, { hits: Track[]; discoveries: Track[]; at: number }>();
 const greeting = () => { const hour = new Date().getHours(); return hour < 5 || hour >= 18 ? 'Boa noite' : hour < 12 ? 'Bom dia' : 'Boa tarde'; };
-async function discover(signal: AbortSignal) {
-  const [hits, discoveries] = await Promise.all([searchTracks('Top Brasil músicas', signal), searchTracks('indie brasileiro novas músicas', signal)]);
-  return { hits: hits.slice(0, 12), discoveries: discoveries.slice(0, 10), at: Date.now() };
+
+async function discover(vibe: string, seedTrack: Track | undefined, signal: AbortSignal) {
+  let hitsQuery = 'Top Brasil mais tocadas';
+  let discQuery = 'Trap Brasil sucessos';
+
+  if (vibe === 'trap') {
+    hitsQuery = 'Trap Brasil mais tocadas';
+    discQuery = 'Trap Nacional lançamentos';
+  } else if (vibe === 'funk') {
+    hitsQuery = 'Funk Brasil mais tocadas';
+    discQuery = 'Funk Paulista e BH';
+  } else if (vibe === 'pop') {
+    hitsQuery = 'Pop internacional Brasil';
+    discQuery = 'Pop hits 2026';
+  } else if (vibe === 'electronic') {
+    hitsQuery = 'Eletrônica Brazilian Bass';
+    discQuery = 'Phonk & EDM remix';
+  } else if (seedTrack) {
+    const artist = seedTrack.artists.split(',')[0].trim();
+    hitsQuery = `${artist} mais tocadas`;
+    discQuery = `músicas parecidas com ${seedTrack.title}`;
+  }
+
+  const [hits, discoveries] = await Promise.all([
+    searchTracks(hitsQuery, signal).catch(() => []),
+    searchTracks(discQuery, signal).catch(() => []),
+  ]);
+
+  return {
+    hits: hits.slice(0, 15),
+    discoveries: discoveries.slice(0, 12),
+    at: Date.now(),
+  };
 }
 
 export function HomeScreen() {
@@ -23,39 +53,72 @@ export function HomeScreen() {
   const likedTracks = usePlayerStore(s => s.likedTracks);
   const playlists = usePlayerStore(s => s.playlists);
   const playTrack = usePlayerStore(s => s.playTrack);
-  const [hits, setHits] = useState<Track[]>(discoveryCache?.hits ?? []);
-  const [discoveries, setDiscoveries] = useState<Track[]>(discoveryCache?.discoveries ?? []);
-  const [loading, setLoading] = useState(!discoveryCache);
+  const [vibe, setVibe] = useState<'for_you' | 'trap' | 'funk' | 'pop' | 'electronic'>('for_you');
+  const [hits, setHits] = useState<Track[]>(() => cacheByVibe.get('for_you')?.hits ?? []);
+  const [discoveries, setDiscoveries] = useState<Track[]>(() => cacheByVibe.get('for_you')?.discoveries ?? []);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const request = useRef<AbortController | null>(null);
 
-  const receive = useCallback((data: NonNullable<typeof discoveryCache>) => { setHits(data.hits); setDiscoveries(data.discoveries); discoveryCache = data; setError(false); }, []);
+  const seed = recentTracks[0] || likedTracks[0];
 
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async (refresh = false, targetVibe = vibe) => {
+    const cached = cacheByVibe.get(targetVibe);
+    if (!refresh && cached && Date.now() - cached.at <= 15 * 60_000) {
+      setHits(cached.hits);
+      setDiscoveries(cached.discoveries);
+      setError(false);
+      return;
+    }
     request.current?.abort();
-    const controller = new AbortController(); request.current = controller;
-    if (refresh) setRefreshing(true); else setLoading(true); setError(false);
+    const controller = new AbortController();
+    request.current = controller;
+    if (refresh) setRefreshing(true);
+    else setLoading(true);
+    setError(false);
     try {
-      const data = await discover(controller.signal);
+      const data = await discover(targetVibe, seed, controller.signal);
       if (controller.signal.aborted) return;
-      receive(data);
-    } catch { if (!controller.signal.aborted) setError(true); }
-    finally { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false); } }
-  }, [receive]);
+      cacheByVibe.set(targetVibe, data);
+      setHits(data.hits);
+      setDiscoveries(data.discoveries);
+    } catch {
+      if (!controller.signal.aborted) setError(true);
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, [vibe, seed]);
 
   useEffect(() => {
-    if (discoveryCache && Date.now() - discoveryCache.at <= 15 * 60_000) return () => request.current?.abort();
-    const controller = new AbortController(); request.current = controller;
-    void discover(controller.signal).then(data => { if (!controller.signal.aborted) receive(data); }).catch(() => { if (!controller.signal.aborted) setError(true); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => request.current?.abort();
-  }, [receive]);
+    let active = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (active) {
+        void load(false, vibe);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+      request.current?.abort();
+    };
+  }, [vibe, load]);
   const quickTracks = recentTracks.slice(0, 6);
   const hero = recentTracks[0] || hits[0];
   return <FlatList style={base.screen} data={hits} keyExtractor={t => t.id} showsVerticalScrollIndicator={false} contentContainerStyle={base.content} initialNumToRender={8} windowSize={5} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.accent} colors={[colors.accent]} />} renderItem={({ item }) => <SongRow track={item} onPress={() => void playTrack(item, hits)} />}
     ListHeaderComponent={<>
       <View style={base.header}><View style={{ flex: 1 }}><HuecoLogo width={166} /><Text style={[base.subtitle, { marginTop: 8 }]}>{greeting()}. Seu som, seu mundo.</Text></View><IconButton name="time-outline" label="Histórico de reprodução" onPress={() => router.push({ pathname: '/playlist/[id]', params: { id: 'recent' } })} /><IconButton name="settings-outline" label="Abrir configurações" onPress={() => router.push('/settings')} /></View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={base.chips}><Chip label="Para você" active onPress={() => void load(true)} /><Chip label="Descobrir" onPress={() => router.push('/search')} /><Chip label="Sua biblioteca" onPress={() => router.push('/library')} /></ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={base.chips}>
+        <Chip label="Para você" active={vibe === 'for_you'} onPress={() => setVibe('for_you')} />
+        <Chip label="Trap & Rap" active={vibe === 'trap'} onPress={() => setVibe('trap')} />
+        <Chip label="Funk & Urban" active={vibe === 'funk'} onPress={() => setVibe('funk')} />
+        <Chip label="Pop Hits" active={vibe === 'pop'} onPress={() => setVibe('pop')} />
+        <Chip label="Eletrônica" active={vibe === 'electronic'} onPress={() => setVibe('electronic')} />
+      </ScrollView>
       <GlassCard style={s.hero}><View style={s.heroTop}><Text style={s.heroLabel}>{recentTracks.length ? 'CONTINUE DE ONDE PAROU' : 'ENTRE NO SEU MUNDO'}</Text><Ionicons name="sparkles" size={19} color={colors.accent} /></View><View style={s.heroBody}><View style={{ flex: 1, gap: 10 }}><Text style={s.heroTitle} numberOfLines={2}>{hero?.title || 'O silêncio termina aqui.'}</Text><Text style={s.heroDescription} numberOfLines={2}>{hero?.artists || 'Um novo universo para as suas músicas.'}</Text></View><CharacterSprite size={100} variant={0} /></View><View style={s.heroFooter}><ActionButton label={hero ? 'Ouvir agora' : 'Explorar músicas'} icon={hero ? 'play' : 'search'} onPress={() => hero ? void playTrack(hero, recentTracks.length ? recentTracks : hits) : router.push('/search')} /><Text style={s.heroNote}>HUECO SOUND / ZHYRSNOW</Text></View></GlassCard>
       {quickTracks.length > 0 && <View style={s.quickGrid}>{quickTracks.map(t => <Pressable key={t.id} accessibilityRole="button" accessibilityLabel={`Reproduzir ${t.title}`} onPress={() => void playTrack(t, recentTracks)} style={({ pressed }) => [s.quickCard, pressed && { opacity: .6 }]}><Cover uri={t.coverUrl} size={52} /><Text style={s.quickTitle} numberOfLines={2}>{t.title}</Text></Pressable>)}</View>}
       <View style={base.sectionRow}><Text style={base.section}>Feito por você</Text><Pressable accessibilityRole="button" onPress={() => router.push('/library')} style={s.textLink}><Text style={base.link}>VER TUDO</Text></Pressable></View>

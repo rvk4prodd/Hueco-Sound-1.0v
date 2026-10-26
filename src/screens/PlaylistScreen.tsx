@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { usePlayerStore } from '../player/usePlayerStore';
@@ -7,6 +7,8 @@ import { useUIStore } from '../ui/useUIStore';
 import { useDeviceLibraryStore } from '../library/useDeviceLibraryStore';
 import { importLocalTracks } from '../library/transfers';
 import { downloadPlaylist } from '../library/downloads';
+import { getRadioTracks } from '../api/innertube';
+import { Track } from '../types';
 import { PlaylistMixStudio } from '../components/PlaylistMixStudio';
 import { SongRow } from '../components/SongRow';
 import { colors } from '../theme';
@@ -33,6 +35,9 @@ export function PlaylistScreen() {
   const notify = useUIStore(s => s.notify);
   const localTracks = useDeviceLibraryStore(s => s.localTracks);
   const removeLocalTrack = useDeviceLibraryStore(s => s.removeTrack);
+  const addTrackToPlaylist = usePlayerStore(s => s.addTrackToPlaylist);
+  const [recommendations, setRecommendations] = useState<Track[]>([]);
+  const [loadingRecs, setLoadingRecs] = useState(false);
   const [importing, setImporting] = useState(false);
   const [downloadingState, setDownloadingState] = useState<{ current: number; total: number } | null>(null);
   const [mixStudioOpen, setMixStudioOpen] = useState(false);
@@ -75,6 +80,32 @@ export function PlaylistScreen() {
       setDownloadingState(null);
     });
   };
+
+  const firstTrackId = tracks[0]?.id;
+  useEffect(() => {
+    let active = true;
+    const loadRecs = async () => {
+      await Promise.resolve();
+      if (!active) return;
+      if (!firstTrackId) {
+        setRecommendations([]);
+        return;
+      }
+      setLoadingRecs(true);
+      try {
+        const recs = await getRadioTracks(firstTrackId);
+        if (!active) return;
+        const currentIds = new Set(tracks.map(t => t.id));
+        setRecommendations(recs.filter(t => !currentIds.has(t.id)).slice(0, 6));
+      } catch {
+        if (active) setRecommendations([]);
+      } finally {
+        if (active) setLoadingRecs(false);
+      }
+    };
+    void loadRecs();
+    return () => { active = false; };
+  }, [firstTrackId, tracks]);
 
   if (!isFixed && !playlist) return <View style={base.screen}><View style={base.header}><IconButton name="arrow-back" label="Voltar" onPress={back} /></View><EmptyState title="Playlist não encontrada" description="Ela pode ter sido removida da sua biblioteca." action="Voltar à biblioteca" onAction={() => router.replace('/library')} /></View>;
 
@@ -184,7 +215,56 @@ export function PlaylistScreen() {
       );
     }}
     ListEmptyComponent={<EmptyState title={filter ? 'Nenhuma música com esse nome' : id === 'liked' ? 'Guarde suas favoritas' : id === 'recent' ? 'Seu próximo play fica aqui' : id === 'device' ? 'Sua música também offline' : 'Essa playlist é toda sua'} description={filter ? 'Tente outro título ou artista.' : id === 'liked' ? 'Toque no coração de uma música para encontrá-la aqui sempre que quiser.' : id === 'recent' ? 'As músicas que você ouvir aparecem neste histórico.' : id === 'device' ? 'Importe arquivos de áudio do aparelho para ouvir quando quiser.' : 'Adicione músicas pela busca. Depois, organize do seu jeito.'} action={filter ? 'Limpar busca' : importing ? 'Importando…' : id === 'device' ? 'Importar áudio' : 'Adicionar músicas'} onAction={() => filter ? setFilter('') : add()} />}
-    ListFooterComponent={!isFixed && tracks.length > 0 ? <View style={s.addMore}><ActionButton secondary icon="add" label="Adicionar músicas" onPress={add} /></View> : undefined}
+    ListFooterComponent={
+      <>
+        {!isFixed && tracks.length > 0 && (
+          <View style={s.addMore}>
+            <ActionButton secondary icon="add" label="Adicionar músicas à playlist" onPress={add} />
+          </View>
+        )}
+        {tracks.length > 0 && recommendations.length > 0 && (
+          <View style={s.recsContainer}>
+            <View style={s.recsHeader}>
+              <View>
+                <Text style={s.recsTitle}>Músicas recomendadas</Text>
+                <Text style={s.recsSubtitle}>Com base nesta playlist</Text>
+              </View>
+              {loadingRecs && <ActivityIndicator size="small" color={colors.accent} />}
+            </View>
+            {recommendations.map(track => (
+              <View key={track.id} style={s.recRow}>
+                <Pressable
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                  onPress={() => void playTrack(track, [track, ...recommendations])}
+                >
+                  <Cover uri={track.coverUrl} size={42} />
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>
+                      {track.title}
+                    </Text>
+                    <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>
+                      {track.artists}
+                    </Text>
+                  </View>
+                </Pressable>
+                {!isFixed && (
+                  <IconButton
+                    name="add-circle-outline"
+                    label={`Adicionar ${track.title} à playlist`}
+                    color={colors.accent}
+                    onPress={() => {
+                      addTrackToPlaylist(id, track);
+                      setRecommendations(prev => prev.filter(t => t.id !== track.id));
+                      notify('Música adicionada à playlist.');
+                    }}
+                  />
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+      </>
+    }
   />
   <NameDialog visible={renaming} title="Renomear playlist" initialValue={name} onClose={() => setRenaming(false)} onSave={value => { renamePlaylist(id, value); setRenaming(false); notify('Playlist renomeada.'); }} />
   <ConfirmDialog visible={!!removingLocal} title="Remover da coleção local?" description={`“${removingLocal?.title || ''}” será removida de “Neste celular”.`} confirmLabel="Remover" onClose={() => setRemovingLocal(null)} onConfirm={() => { const target = removingLocal; setRemovingLocal(null); if (target) void removeLocalTrack(target.id).then(() => notify('Música removida da coleção local.')).catch(() => notify('Não foi possível remover. Tente novamente.')); }} />
@@ -299,5 +379,37 @@ const s = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     textTransform: 'uppercase',
+  },
+  recsContainer: {
+    marginTop: 16,
+    marginBottom: 30,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  recsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  recsTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  recsSubtitle: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  recRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
   },
 });

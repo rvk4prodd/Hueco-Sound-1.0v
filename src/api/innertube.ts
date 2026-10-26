@@ -356,5 +356,58 @@ export function fetchTrackDetails(trackId: string, signal?: AbortSignal): Promis
   }, signal);
 }
 
+export async function getRadioTracks(trackId: string, signal?: AbortSignal): Promise<Track[]> {
+  const cleanId = trackId.replace(/^yt:/, '');
+  if (/^[a-zA-Z0-9_-]{11}$/.test(cleanId)) {
+    try {
+      const data = await requestJson('https://music.youtube.com/youtubei/v1/next?prettyPrint=false', {
+        method: 'POST',
+        signal,
+        timeoutMs: 8000,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Origin: 'https://music.youtube.com',
+        },
+        body: JSON.stringify({
+          videoId: cleanId,
+          playlistId: `RDAMVM${cleanId}`,
+          context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20240101.01.00', hl: 'pt', gl: 'BR' } },
+        }),
+      });
+
+      const contents = at(data, 'contents', 'singleColumnMusicWatchNextResultsRenderer', 'tabbedRenderer', 'watchNextTabbedResultsRenderer', 'tabs') as unknown[];
+      const firstTab = Array.isArray(contents) ? contents[0] : null;
+      const rawQueue = at(firstTab, 'tabRenderer', 'content', 'musicQueueRenderer', 'content', 'playlistPanelRenderer', 'contents') as unknown[];
+
+      if (Array.isArray(rawQueue) && rawQueue.length > 0) {
+        const tracks: Track[] = [];
+        for (const item of rawQueue) {
+          const renderer = at(item, 'playlistPanelVideoRenderer');
+          if (!renderer) continue;
+          const id = string(at(renderer, 'videoId'));
+          const title = string(at(renderer, 'title', 'runs', 0, 'text'));
+          const artist = string(at(renderer, 'shortBylineText', 'runs', 0, 'text')) || string(at(renderer, 'longBylineText', 'runs', 0, 'text')) || 'Artista';
+          if (!id || !title || id === cleanId) continue;
+          const thumbs = array(at(renderer, 'thumbnail', 'thumbnails')).map(object);
+          const coverUrl = bestThumbnail(thumbs);
+          tracks.push({
+            id: `yt:${id}`,
+            title,
+            artists: artist,
+            durationMs: 180000,
+            coverUrl,
+          });
+          if (tracks.length >= 15) break;
+        }
+        if (tracks.length > 0) return tracks;
+      }
+    } catch {}
+  }
+
+  // Fallback: search for top tracks in Brazil
+  return searchTracks('Top Brasil músicas', signal).then(t => t.slice(0, 15)).catch(() => []);
+}
+
 
 

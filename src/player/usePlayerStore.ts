@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Track, LyricLine, Playlist, RepeatMode } from "../types";
-import { resolveAudioStream, fetchLyrics, isAbortError } from "../api/innertube";
+import { resolveAudioStream, fetchLyrics, getRadioTracks, isAbortError } from "../api/innertube";
 import { audioManager, PlaybackStatus } from "./audioManager";
 import { MAX_QUEUE, moved, shuffledIds, uniqueTracks } from "./queue";
 import { finite, LEGACY_LIKES_KEY, LEGACY_RECENTS_KEY, parseSavedData, SavedPlayerData, STORAGE_KEY, validatedIds, validatedTracks } from "./persistence";
@@ -283,9 +283,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         void startPlayback(get().currentTrack!, undefined, false, true, get().positionMs, status.sourceUrl ? [status.sourceUrl] : []);
         return;
       }
+      recoveredTrackId = null;
       desiredPlaying = false;
-      audioManager.pause();
-      update({ error: status.error, isPlaying: false, isLoading: false });
+      update({ isPlaying: false, isLoading: false, error: status.error });
+      save();
       return;
     }
     const state = get();
@@ -401,6 +402,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     } else {
       next = state.queue[state.currentIndex + 1];
       if (!next && state.repeatMode === "all") next = state.queue[0];
+    }
+    if (!next) {
+      if (state.repeatMode === "one" && state.currentTrack) {
+        next = state.currentTrack;
+      } else if (state.currentTrack) {
+        // Autoplay / Endless playback: fetch recommendations based on current track and carry on!
+        try {
+          const recs = await getRadioTracks(state.currentTrack.id);
+          const existingIds = new Set(state.queue.map((t) => t.id));
+          const additions = recs.filter((t) => !existingIds.has(t.id));
+          if (additions.length > 0) {
+            const newQueue = [...state.queue, ...additions].slice(0, MAX_QUEUE);
+            update({ queue: newQueue });
+            next = additions[0];
+          }
+        } catch {}
+      }
     }
     if (!next) {
       // A finite queue has a real end. Manual Next leaves the final track selected.
