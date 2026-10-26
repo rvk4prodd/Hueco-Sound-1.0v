@@ -251,14 +251,18 @@ export function PlaylistMixStudio({
 
       const startSecA = Math.max(0, effectiveOutPoint - 3);
       pA.volume = 1.0;
-      await pA.seekTo(startSecA);
+      try {
+        if (startSecA > 0) await pA.seekTo(startSecA);
+      } catch {}
 
       pB.volume = 0.0;
-      await pB.seekTo(effectiveInPoint);
+      try {
+        if (effectiveInPoint > 0) await pB.seekTo(effectiveInPoint);
+      } catch {}
 
       if (abort.signal.aborted) return;
       setPreviewLoading(false);
-      pA.play();
+      try { pA.play(); } catch {}
 
       let bStarted = false;
       const startTime = Date.now();
@@ -279,7 +283,12 @@ export function PlaylistMixStudio({
 
         if (elapsed >= leadInMs && !bStarted) {
           bStarted = true;
-          try { pB.play(); } catch {}
+          try {
+            if (effectiveInPoint > 0) {
+              void pB.seekTo(effectiveInPoint);
+            }
+            pB.play();
+          } catch {}
         }
 
         if (elapsed >= leadInMs && elapsed < leadInMs + crossfadeTotalMs) {

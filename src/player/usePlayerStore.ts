@@ -265,8 +265,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     // Trigger the real simultaneous dual-deck crossfade right at outPointSec
     if (status.currentTime >= outPointSec) {
       auxPreparingTrackId = null;
-      void audioManager.executeCrossfade(nextTrack, durationSec, curve, inCueSec, () => {
+      void audioManager.executeCrossfade(nextTrack, durationSec, curve, inCueSec, (handedOver) => {
         if (requestVersion !== version) return;
+        if (!handedOver) {
+          void startPlayback(nextTrack, undefined, false, false, inCueSec * 1000);
+          return;
+        }
         selectTrack(nextTrack, version);
         syncUpcoming();
       });

@@ -288,6 +288,21 @@ export function resolveAudioStream(trackId: string, title?: string, artist?: str
         if (isAbortError(error)) throw error;
         firstError ||= error;
       }
+
+      try {
+        const hits = await searchTracks(`${title} ${artist}`, { signal });
+        const match = hits.find(h => {
+          const hitId = h.id.replace(/^yt:/, '');
+          return /^[a-zA-Z0-9_-]{11}$/.test(hitId) && hitId !== videoId;
+        });
+        if (match) {
+          const standInId = match.id.replace(/^yt:/, '');
+          const stream = await resolveYoutubeStream(standInId, signal, options.excludeUrls);
+          if (stream) return stream;
+        }
+      } catch (standInError) {
+        if (isAbortError(standInError)) throw standInError;
+      }
     }
     if (firstError instanceof ApiError && (firstError.code === 'network' || firstError.code === 'timeout')) throw firstError;
     throw new ApiError('Não foi possível obter esta gravação. O provedor pode restringir o áudio. Tente outra música ou tente novamente mais tarde.', 'unavailable');

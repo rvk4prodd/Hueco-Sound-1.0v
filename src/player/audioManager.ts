@@ -111,20 +111,35 @@ export class AudioManager {
     this.subscriptions = [
       player.addListener("playlistStatusUpdate", (status) => {
         if (this.player !== player || version !== this.version) return;
-        const playingTrack = this.tracks[status.currentIndex];
-        if (!playingTrack) return;
+
         const error = errorMessage((status as NativeStatus).error);
         if (error) playbackError = error;
-        if (status.isLoaded || error) this.preparedResolve?.(!error);
+        if (status.isLoaded || error || status.currentTime > 0) {
+          this.preparedResolve?.(!error);
+        }
+
+        const effectiveIndex = status.currentIndex >= 0 ? status.currentIndex : 0;
+        const playingTrack = this.tracks[effectiveIndex] || this.tracks[0];
+        if (!playingTrack) {
+          if (error) {
+            onStatusUpdate({
+              ...status,
+              trackId: track.id,
+              sourceUrl: originalPlaybackSource(url),
+              error,
+            });
+          }
+          return;
+        }
 
         this.lastTime = status.currentTime;
-        this.lastDuration = status.duration;
+        this.lastDuration = status.duration > 0 ? status.duration : (playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0);
         this.applyVolume();
 
         onStatusUpdate({
           ...status,
           trackId: playingTrack.id,
-          sourceUrl: originalPlaybackSource(this.urls[status.currentIndex]),
+          sourceUrl: originalPlaybackSource(this.urls[effectiveIndex] || url),
           error,
         });
       }),
@@ -134,7 +149,7 @@ export class AudioManager {
         if (!playingTrack || playingTrack.id === this.reportedTrackId) return;
         this.reportedTrackId = playingTrack.id;
         this.lastTime = 0;
-        this.lastDuration = 0;
+        this.lastDuration = playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0;
         this.applyVolume();
         this.retainSources();
         this.activateMetadata(playingTrack);
@@ -145,7 +160,7 @@ export class AudioManager {
     this.activateMetadata(track);
 
     const prepared = new Promise<boolean>((resolve) => { this.preparedResolve = resolve; });
-    const timeout = setTimeout(() => this.preparedResolve?.(false), 30_000);
+    const timeout = setTimeout(() => this.preparedResolve?.(false), 6_000);
     try {
       player.play();
       const loaded = player.isLoaded || await prepared;
@@ -191,7 +206,7 @@ export class AudioManager {
     const player = this.player;
     if (!player) return;
     const version = ++this.upcomingVersion;
-    const current = player.currentIndex;
+    const current = Math.max(0, player.currentIndex);
     const desired = tracks.slice(0, 2);
     const existing = this.tracks.slice(current + 1);
     if (existing.length === desired.length && existing.every((t, i) => t.id === desired[i]?.id)) {
@@ -253,7 +268,7 @@ export class AudioManager {
     durationSec: number,
     curve: CrossfadeCurve = 'overlap',
     inCueSec = 0,
-    onHandover: () => void,
+    onHandover: (handedOverNatively?: boolean) => void,
   ): Promise<void> {
     const player = this.player;
     if (!player || this.isCrossfading) return;
@@ -329,7 +344,7 @@ export class AudioManager {
     }, 25);
   }
 
-  private finalizeCrossfade(nextTrack: Track, finalPositionSec: number, onHandover: () => void): void {
+  private finalizeCrossfade(nextTrack: Track, finalPositionSec: number, onHandover: (handedOverNatively?: boolean) => void): void {
     if (this.crossfadeWatchdog) {
       clearTimeout(this.crossfadeWatchdog);
       this.crossfadeWatchdog = null;
@@ -344,6 +359,7 @@ export class AudioManager {
 
     // Advance primary player to nextTrack
     const nextIndex = this.tracks.findIndex(t => t.id === nextTrack.id);
+    let handedOverNatively = false;
     if (player && nextIndex >= 0) {
       try {
         player.skipTo(nextIndex);
@@ -352,6 +368,7 @@ export class AudioManager {
         }
         player.volume = masterVolume;
         player.play();
+        handedOverNatively = true;
       } catch {
         // Fallback
       }
@@ -363,7 +380,7 @@ export class AudioManager {
 
     // Activate lockscreen metadata for Track B
     this.activateMetadata(nextTrack);
-    onHandover();
+    onHandover(handedOverNatively);
   }
 
   abortCrossfade(): void {

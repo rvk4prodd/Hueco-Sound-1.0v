@@ -82,9 +82,9 @@ export function FullscreenPlayer() {
  if (!track) return null;
  const goSettings = () => { close(false); router.push('/settings'); };
  return <Modal visible={open} animationType={reducedMotion || motion === 'none' ? 'none' : motion === 'slide' ? 'slide' : 'fade'} presentationStyle="fullScreen" onRequestClose={() => { if (showSleep) setShowSleep(false); else if (page !== 'music') setPage('music'); else close(false); }} statusBarTranslucent>
- <LinearGradient colors={[coverColor(track.id), colors.background, colors.background]} locations={[0, 0.7, 1]} style={[styles.container, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 12) }]}>
- {customWallpaperUri && <Image pointerEvents="none" source={{ uri: customWallpaperUri }} style={[StyleSheet.absoluteFill, { opacity: .25 }]} resizeMode="cover" />}
- {glass && !!track.coverUrl && <Image pointerEvents="none" source={{ uri: track.coverUrl }} blurRadius={35} style={[StyleSheet.absoluteFill, { opacity: .18 }]} resizeMode="cover" />}
+ <LinearGradient colors={[coverColor(track.id), 'rgba(6, 10, 14, 0.85)', '#060a0e']} locations={[0, 0.5, 1]} style={[styles.container, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 12) }]}>
+ {customWallpaperUri && <Image pointerEvents="none" source={{ uri: customWallpaperUri }} style={[StyleSheet.absoluteFill, { opacity: .65 }]} resizeMode="cover" />}
+ {glass && !!track.coverUrl && <Image pointerEvents="none" source={{ uri: track.coverUrl }} blurRadius={35} style={[StyleSheet.absoluteFill, { opacity: .35 }]} resizeMode="cover" />}
  <View style={styles.header}><IconButton icon="chevron-down" label="Fechar player" onPress={() => close(false)} /><View style={styles.headerTitle}><Text style={styles.eyebrow}>TOCANDO DA SUA BIBLIOTECA</Text><Text numberOfLines={1} style={styles.headerSubtitle}>{track.albumTitle || track.title}</Text></View><IconButton icon="ellipsis-horizontal" label="Opções da música" onPress={() => actions(track)} /></View>
  <View style={styles.pages}>{([{ id: 'music', text: 'Música' }, { id: 'lyrics', text: 'Letra' }, { id: 'queue', text: 'Fila' }] as const).map((tab) => <Pressable key={tab.id} accessibilityRole="tab" accessibilityState={{ selected: page === tab.id }} onPress={() => setPage(tab.id)} style={[styles.pageTab, page === tab.id && styles.pageActive]}><Text style={[styles.pageText, page === tab.id && { color: colors.text }]}>{tab.text}</Text></Pressable>)}</View>
  <MotionView key={page} style={{ flex: 1 }}>

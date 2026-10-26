@@ -62,7 +62,7 @@ export default function RootLayout() {
           {customWallpaperUri ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               <Image source={{ uri: customWallpaperUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(6, 12, 16, ${Math.max(0.35, 0.88 - (glassBlur / 100) * 0.45)})` }]} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(6, 12, 16, ${Math.max(0.2, 0.65 - (glassBlur / 100) * 0.4)})` }]} />
             </View>
           ) : wallpaperPreset !== 'default' && PRESET_GRADIENTS[wallpaperPreset] ? (
             <LinearGradient pointerEvents="none" colors={PRESET_GRADIENTS[wallpaperPreset]} style={StyleSheet.absoluteFill} />

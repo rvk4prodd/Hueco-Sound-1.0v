@@ -12,7 +12,7 @@ export function MiniPlayer() {
  const opacity = useState(() => new Animated.Value(0))[0]; const visible = Boolean(track);
  useEffect(() => { Animated.timing(opacity, { toValue: visible ? 1 : 0, duration: reducedMotion ? 0 : 220, useNativeDriver: true }).start(); }, [opacity, visible, reducedMotion]);
  if (!track) return null;
- return <Animated.View style={[styles.outer, { opacity }]}><GlassCard style={[styles.inner, { backgroundColor: coverColor(track.id) }]}>
+ return <Animated.View style={[styles.outer, { opacity }]}><GlassCard style={[styles.inner, { borderLeftWidth: 3, borderLeftColor: coverColor(track.id) }]}>
  <Pressable accessibilityRole="button" accessibilityLabel={`Abrir player: ${track.title}`} onPress={() => open(true)} style={styles.main}><Cover uri={track.coverUrl} seed={track.id} size={42} radius={5} /><View style={styles.info}><Text numberOfLines={1} style={styles.title}>{track.title}</Text><Text numberOfLines={1} style={[styles.artist, error && { color: colors.danger }]}>{error ? 'Falha ao tocar • toque para tentar' : track.artists}</Text></View></Pressable>
  <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pausar' : 'Reproduzir'} disabled={loading} onPress={() => void toggle()} style={styles.button}>{loading ? <ActivityIndicator color={colors.text} size="small" /> : <Ionicons name={playing ? 'pause' : 'play'} size={27} color={colors.text} />}</Pressable>
  <Pressable accessibilityRole="button" accessibilityLabel="Próxima música" onPress={() => void next()} style={styles.button}><Ionicons name="play-skip-forward" size={22} color={colors.text} /></Pressable><MiniProgress /></GlassCard></Animated.View>;

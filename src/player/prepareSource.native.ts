@@ -52,6 +52,14 @@ function trimCache(dir: Directory, incomingBytes: number, preserve: string): voi
     file.delete(); originals.delete(file.uri);
   }
   if (size + incomingBytes > CACHE_BYTES || count >= CACHE_FILES) {
+    for (const file of completed) {
+      if (size + incomingBytes <= CACHE_BYTES && count < CACHE_FILES) break;
+      if (file.uri === preserve || pinned.has(file.uri)) continue;
+      size -= file.size; count--;
+      file.delete(); originals.delete(file.uri); reserved.delete(file.uri);
+    }
+  }
+  if (size + incomingBytes > CACHE_BYTES || count >= CACHE_FILES) {
     throw new ApiError('Aguarde a preparação das músicas atuais antes de tentar novamente.', 'unavailable');
   }
 }
