@@ -323,8 +323,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   }
 
   async function startPlayback(track: Track, newQueue?: Track[], freshTraversal = true, forceRefresh = false, restorePosition = 0, initialExclusions: string[] = [], playlistId?: string): Promise<void> {
-    await get().loadSavedData();
     const version = ++requestVersion;
+    if (!get().hydrated) {
+      await get().loadSavedData();
+      if (requestVersion !== version) return;
+    }
     streamController?.abort();
     streamController = new AbortController();
     audioManager.stop();
@@ -383,7 +386,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
   async function transition(track: Track): Promise<void> {
     desiredPlaying = true;
-    if (audioManager.skipToTrack(track.id)) return;
     await startPlayback(track, undefined, false);
   }
 
@@ -422,8 +424,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     }
     if (!next) {
       // A finite queue has a real end. Manual Next leaves the final track selected.
-      if (automatic) { update({ positionMs: state.durationMs }); pausePlayback(); }
-      else useUIStore.getState().notify("Fim da fila. Adicione mais músicas pelo menu ⋮ ou ative repetir a fila.");
+      if (automatic) { update({ positionMs: state.durationMs, isPlaying: false, isLoading: false }); pausePlayback(); }
+      else {
+        update({ isLoading: false });
+        useUIStore.getState().notify("Fim da fila. Adicione mais músicas pelo menu ⋮ ou ative repetir a fila.");
+      }
       return;
     }
     if (next.id === state.currentTrack?.id) {

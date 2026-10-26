@@ -12,15 +12,15 @@ export function GlassCard({ children, style, ...props }: ViewProps) {
   const cardBg = !glass
     ? colors.surface
     : hasWallpaper
-    ? `rgba(16, 36, 35, ${Math.max(0.35, opacity * 0.75)})`
-    : '#102423a8';
+    ? `rgba(12, 22, 28, ${Math.max(0.4, Math.min(0.85, opacity * 0.72))})`
+    : 'rgba(14, 25, 32, 0.75)';
 
   return (
     <View {...props} style={[s.card, { backgroundColor: cardBg }, style]}>
       {glass && (
         <LinearGradient
           pointerEvents="none"
-          colors={['#a7ffe822', '#1c4b4940', '#030d1566']}
+          colors={['rgba(255, 255, 255, 0.12)', 'rgba(255, 255, 255, 0.02)', 'rgba(0, 0, 0, 0.25)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
@@ -36,6 +36,6 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#9bffe02c',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
 });

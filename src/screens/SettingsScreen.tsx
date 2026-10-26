@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import React, { useEffect, useState } from 'react';
-import { Pressable, Share, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Image, Pressable, Share, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -111,6 +111,15 @@ export function SettingsScreen() {
             onPress={() => void pickWallpaper()}
           />
         </View>
+        {experience.customWallpaperUri ? (
+          <View style={{ marginTop: 12, height: 110, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.accent }}>
+            <Image source={{ uri: experience.customWallpaperUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'center', alignItems: 'center', padding: 12 }]}>
+              <Ionicons name="image-outline" size={24} color={colors.accent} />
+              <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700', marginTop: 4 }}>Foto personalizada ativa</Text>
+            </View>
+          </View>
+        ) : null}
         {experience.customWallpaperUri && (
           <Pressable accessibilityRole="button" onPress={() => experience.configure({ customWallpaperUri: null, wallpaperPreset: 'default' })} style={{ marginTop: 8 }}>
             <Text style={{ color: colors.danger, fontSize: 12, fontWeight: '700' }}>Remover foto e restaurar padrão</Text>

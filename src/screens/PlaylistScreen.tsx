@@ -112,7 +112,7 @@ export function PlaylistScreen() {
   return <View style={base.screen}><FlatList style={{ flex: 1 }} data={filtered} keyExtractor={t => t.id} initialNumToRender={12} windowSize={7} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={base.content}
     ListHeaderComponent={<>
       <View style={s.top}><IconButton name="arrow-back" label="Voltar" onPress={back} /><Text style={s.topLabel}>{id === 'recent' ? 'HISTÓRICO' : 'SUA BIBLIOTECA'}</Text>{!isFixed || id === 'device' ? <IconButton name={editing ? 'checkmark' : 'create-outline'} label={editing ? 'Concluir edição' : id === 'device' ? 'Gerenciar arquivos locais' : 'Editar playlist e ordem das músicas'} onPress={() => setEditing(v => !v)} /> : <View style={{ width: 44 }} />}</View>
-      <View style={[s.hero, id === 'liked' && { backgroundColor: '#282b44' }]}><Cover uri={!isFixed ? tracks[0]?.coverUrl : undefined} size={170} icon={id === 'liked' ? 'heart' : id === 'recent' ? 'time' : id === 'device' ? 'phone-portrait' : 'albums'} color={id === 'liked' ? '#6a61b8' : '#43664d'} /><Text style={s.playlistType}>{isFixed ? 'SUA COLEÇÃO' : 'PLAYLIST PESSOAL'}</Text><Text style={s.name}>{name}</Text><Text style={s.description}>{id === 'liked' ? 'Os sons que têm um lugar só seu.' : id === 'recent' ? 'Volte para as músicas que passaram por aqui.' : id === 'device' ? 'Arquivos salvos no aparelho. Sua música até sem conexão.' : playlist?.description || 'Um pouco de tudo que faz seu dia soar melhor.'}</Text><Text style={s.meta}>{tracks.length} {tracks.length === 1 ? 'música' : 'músicas'}{duration > 0 ? ` · ${Math.ceil(duration / 60_000)} min` : ''}</Text></View>
+      <View style={[s.hero, id === 'liked' && { backgroundColor: 'rgba(40, 43, 68, 0.65)' }]}><Cover uri={!isFixed ? tracks[0]?.coverUrl : undefined} size={170} icon={id === 'liked' ? 'heart' : id === 'recent' ? 'time' : id === 'device' ? 'phone-portrait' : 'albums'} color={id === 'liked' ? '#6a61b8' : '#43664d'} /><Text style={s.playlistType}>{isFixed ? 'SUA COLEÇÃO' : 'PLAYLIST PESSOAL'}</Text><Text style={s.name}>{name}</Text><Text style={s.description}>{id === 'liked' ? 'Os sons que têm um lugar só seu.' : id === 'recent' ? 'Volte para as músicas que passaram por aqui.' : id === 'device' ? 'Arquivos salvos no aparelho. Sua música até sem conexão.' : playlist?.description || 'Um pouco de tudo que faz seu dia soar melhor.'}</Text><Text style={s.meta}>{tracks.length} {tracks.length === 1 ? 'música' : 'músicas'}{duration > 0 ? ` · ${Math.ceil(duration / 60_000)} min` : ''}</Text></View>
       {downloadingState && (
         <View style={s.downloadBanner}>
           <Ionicons name="cloud-download-outline" size={16} color={colors.accent} />
@@ -287,7 +287,7 @@ export function PlaylistScreen() {
 const s = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 6 },
   topLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.7 },
-  hero: { backgroundColor: '#233326', paddingHorizontal: 26, paddingTop: 12, paddingBottom: 26, alignItems: 'center', gap: 12, marginHorizontal: 16, borderRadius: 22 },
+  hero: { backgroundColor: 'rgba(25, 45, 38, 0.65)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', paddingHorizontal: 26, paddingTop: 12, paddingBottom: 26, alignItems: 'center', gap: 12, marginHorizontal: 16, borderRadius: 22 },
   downloadBanner: {
     flexDirection: 'row',
     alignItems: 'center',

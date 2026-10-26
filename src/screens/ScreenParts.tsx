@@ -47,7 +47,7 @@ export function ConfirmDialog({ visible, title, description, confirmLabel = 'Exc
 }
 
 export const screenStyles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: 'transparent' },
   content: { paddingBottom: 24 },
   header: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 10 },
   title: { color: colors.text, fontSize: 29, fontWeight: '800', letterSpacing: -.8, flex: 1 },

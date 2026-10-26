@@ -111,7 +111,7 @@ export function HomeScreen() {
   const hero = recentTracks[0] || hits[0];
   return <FlatList style={base.screen} data={hits} keyExtractor={t => t.id} showsVerticalScrollIndicator={false} contentContainerStyle={base.content} initialNumToRender={8} windowSize={5} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.accent} colors={[colors.accent]} />} renderItem={({ item }) => <SongRow track={item} onPress={() => void playTrack(item, hits)} />}
     ListHeaderComponent={<>
-      <View style={base.header}><View style={{ flex: 1 }}><HuecoLogo width={166} /><Text style={[base.subtitle, { marginTop: 8 }]}>{greeting()}. Seu som, seu mundo.</Text></View><IconButton name="time-outline" label="Histórico de reprodução" onPress={() => router.push({ pathname: '/playlist/[id]', params: { id: 'recent' } })} /><IconButton name="settings-outline" label="Abrir configurações" onPress={() => router.push('/settings')} /></View>
+      <View style={base.header}><View style={{ flex: 1 }}><HuecoLogo width={166} /><Text style={[base.subtitle, { marginTop: 8 }]}>{greeting()}. Seu som, seu mundo.</Text></View><IconButton name="time-outline" label="Histórico de reprodução" onPress={() => router.push({ pathname: '/playlist/[id]', params: { id: 'recent' } })} /><IconButton name="color-palette-outline" label="Personalizar plano de fundo e visual" onPress={() => router.push('/settings')} /><IconButton name="settings-outline" label="Abrir configurações" onPress={() => router.push('/settings')} /></View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={base.chips}>
         <Chip label="Para você" active={vibe === 'for_you'} onPress={() => setVibe('for_you')} />
         <Chip label="Trap & Rap" active={vibe === 'trap'} onPress={() => setVibe('trap')} />
@@ -145,12 +145,12 @@ const s = StyleSheet.create({
   heroFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, gap: 10, flexWrap: 'wrap' },
   heroNote: { color: colors.accent, fontSize: 8, letterSpacing: 1.5, fontWeight: '700' },
   quickGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 8 },
-  quickCard: { width: '48.5%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, gap: 9, overflow: 'hidden', paddingRight: 8 },
+  quickCard: { width: '48.5%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(21, 27, 35, 0.68)', borderRadius: 10, gap: 9, overflow: 'hidden', paddingRight: 8, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' },
   quickTitle: { flex: 1, color: colors.text, fontSize: 11, lineHeight: 15, fontWeight: '700' },
   horizontal: { paddingHorizontal: 20, gap: 16 },
   collectionCard: { width: 142, gap: 4 },
   cardTitle: { color: colors.text, fontSize: 14, fontWeight: '700', marginTop: 7 },
   cardSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  createCover: { width: 142, height: 142, borderRadius: 10, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  createCover: { width: 142, height: 142, borderRadius: 10, backgroundColor: 'rgba(21, 27, 35, 0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.12)' },
   textLink: { minHeight: 44, justifyContent: 'center', paddingLeft: 15 },
 });

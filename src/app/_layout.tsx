@@ -31,8 +31,6 @@ export default function RootLayout() {
   const customWallpaperUri = useExperienceStore(s => s.customWallpaperUri);
   const glassBlur = useExperienceStore(s => s.glassBlurIntensity);
 
-  const hasCustomBg = !!customWallpaperUri || (wallpaperPreset !== 'default' && !!PRESET_GRADIENTS[wallpaperPreset]);
-
   useEffect(() => { audioManager.configureTransition(transition, seconds, curve); }, [transition, seconds, curve]);
   useEffect(() => {
     void (async () => {
@@ -64,17 +62,19 @@ export default function RootLayout() {
           {customWallpaperUri ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               <Image source={{ uri: customWallpaperUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(6, 12, 16, ${Math.max(0.4, 0.92 - (glassBlur / 100) * 0.45)})` }]} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(6, 12, 16, ${Math.max(0.35, 0.88 - (glassBlur / 100) * 0.45)})` }]} />
             </View>
           ) : wallpaperPreset !== 'default' && PRESET_GRADIENTS[wallpaperPreset] ? (
             <LinearGradient pointerEvents="none" colors={PRESET_GRADIENTS[wallpaperPreset]} style={StyleSheet.absoluteFill} />
-          ) : null}
+          ) : (
+            <LinearGradient pointerEvents="none" colors={['#080e14', '#0d1820', '#060a0e']} style={StyleSheet.absoluteFill} />
+          )}
 
           <View style={styles.content}>
             <Stack
               screenOptions={{
                 headerShown: false,
-                contentStyle: { backgroundColor: hasCustomBg ? 'transparent' : colors.background },
+                contentStyle: { backgroundColor: 'transparent' },
                 animation: reducedMotion || motion === 'none' ? 'none' : motion === 'slide' ? 'slide_from_right' : 'fade',
                 gestureEnabled: true,
               }}
@@ -103,7 +103,7 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, backgroundColor: '#060a0e' },
   content: { flex: 1 },
   loading: { ...StyleSheet.absoluteFill, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 });
