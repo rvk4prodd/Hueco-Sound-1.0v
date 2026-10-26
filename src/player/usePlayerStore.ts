@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Track, LyricLine, Playlist, RepeatMode } from "../types";
-import { resolveAudioStream, fetchLyrics, getRadioTracks, isAbortError } from "../api/innertube";
+import { resolveAudioStream, fetchLyrics, getRadioTracks, isAbortError, clearApiCaches } from "../api/innertube";
 import { audioManager, PlaybackStatus } from "./audioManager";
 import { MAX_QUEUE, moved, shuffledIds, uniqueTracks } from "./queue";
 import { finite, LEGACY_LIKES_KEY, LEGACY_RECENTS_KEY, parseSavedData, SavedPlayerData, STORAGE_KEY, validatedIds, validatedTracks } from "./persistence";
@@ -280,11 +280,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       // Prefetched tracks skip loadAndPlay; recover their expired/broken source here too.
       if (activeLoadVersion !== version && recoveredTrackId !== status.trackId && !getPlaybackTrack(get().currentTrack!).streamUrl) {
         recoveredTrackId = status.trackId;
+        clearApiCaches?.();
         void startPlayback(get().currentTrack!, undefined, false, true, get().positionMs, status.sourceUrl ? [status.sourceUrl] : []);
         return;
       }
       recoveredTrackId = null;
       desiredPlaying = false;
+      clearApiCaches?.();
       update({ isPlaying: false, isLoading: false, error: status.error });
       save();
       return;
@@ -299,7 +301,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       void checkAndTriggerCrossfade(status, version);
     }
 
-    if (status.didJustFinish && lastFinishedTrack !== status.trackId) {
+    const isEofPause = !status.playing && status.duration > 1 && status.currentTime >= status.duration - 0.6;
+    if ((status.didJustFinish || isEofPause) && lastFinishedTrack !== status.trackId) {
       if (audioManager.activelyCrossfading) {
         // Crossfade handover is currently active; do not interrupt!
         return;
@@ -314,8 +317,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       } else {
         const currentNativeId = audioManager.currentTrackId;
         if (currentNativeId && currentNativeId !== status.trackId) {
-          // Native queue advanced seamlessly without interruption.
-          return;
+          const nextTrack = get().queue.find((t) => t.id === currentNativeId);
+          if (nextTrack) {
+            selectTrack(nextTrack, version);
+            syncUpcoming();
+            return;
+          }
         }
         void advance(true);
       }
@@ -366,7 +373,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       try { await loading; } catch (error) {
         if (activeLoadVersion === version) activeLoadVersion = null;
         if (requestVersion !== version) return;
-        if (attempt === 0 && !getPlaybackTrack(track).streamUrl) { desiredPlaying = true; excluded.push(originalPlaybackSource(url)); update({ isLoading: true, error: null }); continue; }
+        if (attempt === 0 && !getPlaybackTrack(track).streamUrl) {
+          clearApiCaches?.();
+          desiredPlaying = true;
+          excluded.push(originalPlaybackSource(url));
+          update({ isLoading: true, error: null });
+          continue;
+        }
         throw error;
       }
       if (requestVersion !== version) return;
@@ -465,12 +478,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const state = get();
       if (!state.currentTrack) return;
       if (state.isPlaying || state.isLoading) { pausePlayback(); return; }
-      if (!audioManager.hasPlayer || state.error) { await startPlayback(state.currentTrack, undefined, false, !!state.error, state.positionMs); return; }
+      if (state.durationMs > 0 && state.positionMs >= state.durationMs - 600) {
+        lastFinishedTrack = null;
+        await advance(false);
+        return;
+      }
+      if (!audioManager.hasPlayer || state.error) {
+        clearApiCaches?.();
+        await startPlayback(state.currentTrack, undefined, false, true, state.positionMs);
+        return;
+      }
       try {
         desiredPlaying = true;
-        if (state.durationMs > 0 && state.positionMs >= state.durationMs - 300) { await get().seekTo(0); lastFinishedTrack = null; }
         audioManager.resume();
-      } catch (error) { update({ error: message(error), isPlaying: false }); }
+      } catch (error) {
+        update({ error: message(error), isPlaying: false });
+        clearApiCaches?.();
+        await startPlayback(state.currentTrack, undefined, false, true, state.positionMs);
+      }
     },
     seekTo: async (position) => {
       const state = get();
@@ -505,7 +530,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     setIsFullscreenOpen: (open) => update({ isFullscreenOpen: open }),
     clearError: () => update({ error: null }),
-    retryPlayback: async () => { const state = get(); if (state.currentTrack) await startPlayback(state.currentTrack, undefined, false, true, state.positionMs); },
+    retryPlayback: async () => {
+      const state = get();
+      clearApiCaches?.();
+      await audioManager.recoverEngine?.();
+      if (state.currentTrack) {
+        await startPlayback(state.currentTrack, undefined, false, true, state.positionMs);
+      }
+    },
     addToQueue: (track) => {
       const state = get();
       if (state.queue.some((item) => item.id === track.id)) return;

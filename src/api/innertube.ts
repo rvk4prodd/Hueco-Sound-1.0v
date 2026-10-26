@@ -252,9 +252,11 @@ async function resolveYoutubeStream(videoId: string, signal: AbortSignal, exclud
       throw lastError || new ApiError('O provedor não disponibilizou áudio para esta música.', 'unavailable');
     } catch (error) {
       if (isAbortError(error)) throw error;
+      visitorCache.clear();
       lastError = error;
     }
   }
+  visitorCache.clear();
   throw lastError || new ApiError('Esta música está indisponível.', 'unavailable');
 }
 

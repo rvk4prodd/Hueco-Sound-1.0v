@@ -491,6 +491,12 @@ export class AudioManager {
       try { player.release(); } catch { /* Shared native object already released */ }
     }
   }
+
+  async recoverEngine(): Promise<void> {
+    this.stop();
+    this.modePromise = null;
+    await this.init();
+  }
 }
 
 export const audioManager = new AudioManager();

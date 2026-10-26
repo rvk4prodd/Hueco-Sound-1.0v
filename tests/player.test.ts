@@ -23,7 +23,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({ default: {
   multiGet: async (keys: string[]) => keys.map((key) => [key, harness.storage.get(key) ?? null]),
   setItem: (...args: unknown[]) => harness.setItem(...args),
 } }));
-vi.mock("../src/api/innertube", () => ({ resolveAudioStream: (...args: unknown[]) => harness.resolve(...args), fetchLyrics: async () => [], isAbortError: (error: unknown) => error instanceof Error && error.name === 'AbortError' }));
+vi.mock("../src/api/innertube", () => ({ resolveAudioStream: (...args: unknown[]) => harness.resolve(...args), fetchLyrics: async () => [], isAbortError: (error: unknown) => error instanceof Error && error.name === 'AbortError', clearApiCaches: vi.fn() }));
 vi.mock("../src/player/prepareSource", () => ({ preparePlaybackSource: (...args: unknown[]) => harness.prepare(...args), originalPlaybackSource: (url: string) => url }));
 vi.mock("../src/library/useDeviceLibraryStore", () => ({ getPlaybackTrack: (track: Track) => track }));
 vi.mock("../src/player/audioManager", () => ({ audioManager: {
