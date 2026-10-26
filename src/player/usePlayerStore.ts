@@ -9,6 +9,7 @@ import { useUIStore } from "../ui/useUIStore";
 import { getPlaybackTrack } from "../library/useDeviceLibraryStore";
 import { originalPlaybackSource, preparePlaybackSource } from "./prepareSource";
 import { useExperienceStore } from "../preferences/experience";
+import { useAudioFXStore } from "../preferences/audioFX";
 
 export interface PlayerState {
   currentTrack: Track | null;
@@ -49,6 +50,8 @@ export interface PlayerState {
   loadSavedData: () => Promise<void>;
   retryPlayback: () => Promise<void>;
   clearError: () => void;
+  jumpToHotCue: (index: number) => Promise<void>;
+  setHotCueCurrent: (index: number) => void;
   addToQueue: (track: Track) => void;
   playNext: (track: Track) => void;
   removeFromQueue: (index: number) => void;
@@ -301,6 +304,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     update({ isPlaying: status.playing, isLoading: status.isBuffering || (!status.isLoaded && desiredPlaying), positionMs, durationMs });
     if (Date.now() - lastCheckpoint > 10_000 || state.isPlaying !== status.playing) { lastCheckpoint = Date.now(); save(); }
 
+    // 11. AB Loop watchdog
+    const abLoop = useAudioFXStore.getState().abLoop;
+    if (abLoop.enabled && abLoop.pointA !== null && abLoop.pointB !== null) {
+      if (status.currentTime >= abLoop.pointB) {
+        void get().seekTo(abLoop.pointA * 1000);
+        return;
+      }
+    }
+
     if (!audioManager.activelyCrossfading) {
       void checkAndTriggerCrossfade(status, version);
     }
@@ -312,6 +324,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         return;
       }
       lastFinishedTrack = status.trackId;
+      if (state.currentTrack && status.currentTime >= 20) {
+        useAudioFXStore.getState().recordPlayEvent({
+          trackId: state.currentTrack.id,
+          title: state.currentTrack.title,
+          artists: state.currentTrack.artists,
+          coverUrl: state.currentTrack.coverUrl,
+          durationMs: state.currentTrack.durationMs,
+          secondsPlayed: Math.round(status.currentTime),
+          completed: Boolean(status.didJustFinish),
+        });
+      }
       if (state.sleepAtEndOfTrack) {
         update({ sleepAtEndOfTrack: false });
         audioManager.setRepeatOne(state.repeatMode === "one");
@@ -534,6 +557,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     setIsFullscreenOpen: (open) => update({ isFullscreenOpen: open }),
     clearError: () => update({ error: null }),
+    jumpToHotCue: async (cueIndex: number) => {
+      const track = get().currentTrack;
+      if (!track) return;
+      const cues = useAudioFXStore.getState().hotCues[track.id] || [];
+      const cue = cues.find((c) => c.index === cueIndex);
+      if (cue) {
+        await get().seekTo(cue.positionSec * 1000);
+      }
+    },
+    setHotCueCurrent: (cueIndex: number) => {
+      const track = get().currentTrack;
+      if (!track) return;
+      const currentSec = Math.max(0, Math.floor(get().positionMs / 1000));
+      useAudioFXStore.getState().setHotCue(track.id, cueIndex, currentSec);
+      useUIStore.getState().notify(`Hot Cue ${cueIndex + 1} marcado em ${Math.floor(currentSec / 60)}:${String(currentSec % 60).padStart(2, '0')}`);
+    },
     retryPlayback: async () => {
       const state = get();
       clearApiCaches?.();

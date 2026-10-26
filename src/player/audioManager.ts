@@ -66,6 +66,8 @@ export class AudioManager {
   private transition: AudioTransition = 'direct';
   private transitionSeconds = 3;
   private fadeCurve: FadeCurve = 'smooth';
+  private normalizationFactor = 1.0;
+  private reverbLevel = 0;
 
   init(): Promise<void> {
     if (!this.modePromise) {
@@ -472,10 +474,26 @@ export class AudioManager {
     this.applyVolume();
   }
 
+  setNormalization(mode: import('../types').AudioNormalizationMode): void {
+    if (mode === 'balanced') this.normalizationFactor = 0.9;
+    else if (mode === 'quiet') this.normalizationFactor = 0.75;
+    else if (mode === 'loud') this.normalizationFactor = 1.0;
+    else this.normalizationFactor = 1.0;
+    this.applyVolume();
+  }
+
+  setSlowedReverb(speed: number, reverbLevel: number): void {
+    this.reverbLevel = Math.max(0, Math.min(1, reverbLevel));
+    if (this.player) {
+      this.player.playbackRate = speed;
+    }
+    this.applyVolume();
+  }
+
   private applyVolume(): void {
     if (!this.player || !this.options || this.isCrossfading) return;
     const gain = this.transition === 'fade' ? transitionGain(this.lastTime, this.lastDuration, this.transitionSeconds, this.fadeCurve) : 1;
-    this.player.volume = this.options.volume * gain;
+    this.player.volume = Math.max(0, Math.min(1, this.options.volume * gain * this.normalizationFactor));
   }
 
   setPlaybackRate(value: number): void {

@@ -7,6 +7,7 @@ import { useUIStore } from '../ui/useUIStore';
 import { useDeviceLibraryStore } from '../library/useDeviceLibraryStore';
 import { colors } from '../theme';
 import { ActionButton, Chip, ConfirmDialog, Cover, EmptyState, IconButton, NameDialog, screenStyles as base } from './ScreenParts';
+import { SmartPlaylistModal } from '../components/SmartPlaylistModal';
 
 type LibraryItem = { id: string; name: string; count: number; updatedAt: number; coverUrl?: string; type: 'playlist' | 'artist' | 'album'; icon?: 'heart' | 'time' | 'albums' | 'phone-portrait'; fixed?: boolean };
 const SORTS = ['Recentes', 'Nome', 'Mais músicas'] as const;
@@ -26,6 +27,7 @@ export function LibraryScreen() {
   const [naming, setNaming] = useState<{ id?: string; name: string } | null>(null);
   const [selected, setSelected] = useState<LibraryItem | null>(null);
   const [deleting, setDeleting] = useState<LibraryItem | null>(null);
+  const [showSmartModal, setShowSmartModal] = useState(false);
 
   const items = useMemo<LibraryItem[]>(() => {
     let result: LibraryItem[];
@@ -59,7 +61,7 @@ export function LibraryScreen() {
   };
 
   return <View style={base.screen}>
-    <View style={base.header}><View style={s.avatar}><Text style={s.avatarText}>L</Text></View><View style={{ flex: 1 }}><Text style={base.eyebrow}>SEU ESPAÇO</Text><Text style={[base.title, { fontSize: 27 }]}>Biblioteca</Text></View><IconButton name="add" label="Criar playlist" onPress={() => setNaming({ name: '' })} /><IconButton name="settings-outline" label="Abrir configurações" onPress={() => router.push('/settings')} /></View>
+    <View style={base.header}><View style={s.avatar}><Text style={s.avatarText}>L</Text></View><View style={{ flex: 1 }}><Text style={base.eyebrow}>SEU ESPAÇO</Text><Text style={[base.title, { fontSize: 27 }]}>Biblioteca</Text></View><IconButton name="flash-outline" label="Smart Playlists" onPress={() => setShowSmartModal(true)} /><IconButton name="add" label="Criar playlist" onPress={() => setNaming({ name: '' })} /><IconButton name="settings-outline" label="Abrir configurações" onPress={() => router.push('/settings')} /></View>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={base.chips}>{[{ name: 'Playlists', key: 'playlist' }, { name: 'Artistas', key: 'artist' }, { name: 'Álbuns', key: 'album' }].map(item => <Chip key={item.key} label={item.name} active={filter === item.key} onPress={() => setFilter(item.key)} />)}</ScrollView>
     <View style={[base.inputWrap, { marginBottom: 8, height: 46 }]}><Ionicons name="search" size={19} color={colors.muted} /><TextInput accessibilityLabel="Filtrar biblioteca" value={search} onChangeText={setSearch} style={[base.input, { height: 46 }]} placeholder="Buscar na sua biblioteca" placeholderTextColor={colors.muted} returnKeyType="search" />{!!search && <IconButton name="close" label="Limpar filtro da biblioteca" onPress={() => setSearch('')} />}</View>
     <View style={s.sortRow}><Pressable accessibilityRole="button" accessibilityLabel={`Ordenar por ${SORTS[sort]}. Toque para mudar.`} onPress={() => setSort(v => (v + 1) % SORTS.length)} style={s.sortButton}><Ionicons name="swap-vertical" size={17} color={colors.muted} /><Text style={s.sortText}>{SORTS[sort]}</Text></Pressable><Text style={s.count}>{items.length} {items.length === 1 ? 'item' : 'itens'}</Text></View>
@@ -70,6 +72,7 @@ export function LibraryScreen() {
     <NameDialog visible={!!naming} title={naming?.id ? 'Renomear playlist' : 'Nova playlist'} initialValue={naming?.name} onClose={() => setNaming(null)} onSave={saveName} />
     <Modal transparent animationType="fade" visible={!!selected} onRequestClose={() => setSelected(null)}><View style={s.menuOverlay}><Pressable accessibilityLabel="Fechar opções" style={StyleSheet.absoluteFill} onPress={() => setSelected(null)} /><View accessibilityViewIsModal style={s.menu}><Text style={s.menuTitle} numberOfLines={2}>{selected?.name}</Text><ActionButton secondary icon="pencil" label="Renomear playlist" onPress={() => { if (selected) setNaming({ id: selected.id, name: selected.name }); setSelected(null); }} /><ActionButton secondary icon="trash-outline" label="Excluir playlist" onPress={() => { setDeleting(selected); setSelected(null); }} /><ActionButton label="Fechar" onPress={() => setSelected(null)} /></View></View></Modal>
     <ConfirmDialog visible={!!deleting} title="Excluir esta playlist?" description={`“${deleting?.name || ''}” será removida da sua biblioteca. As músicas curtidas continuam salvas.`} onClose={() => setDeleting(null)} onConfirm={() => { if (deleting) deletePlaylist(deleting.id); setDeleting(null); notify('Playlist excluída.'); }} />
+    <SmartPlaylistModal visible={showSmartModal} onClose={() => setShowSmartModal(false)} />
   </View>;
 }
 

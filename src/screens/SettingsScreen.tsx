@@ -13,6 +13,11 @@ import { Chip, ConfirmDialog, IconButton, screenStyles as base } from './ScreenP
 import { useExperienceStore } from '../preferences/experience';
 import { GlassCard } from '../components/GlassCard';
 import { HuecoLogo } from '../components/HuecoBrand';
+import { AudioFXRackModal } from '../components/AudioFXRackModal';
+import { SlowedReverbModal } from '../components/SlowedReverbModal';
+import { ThemeCreatorModal } from '../components/ThemeCreatorModal';
+import { ListeningStatsModal } from '../components/ListeningStatsModal';
+import { SmartPlaylistModal } from '../components/SmartPlaylistModal';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) { return <View style={s.section}><Text style={s.sectionTitle}>{title}</Text><GlassCard style={s.card}>{children}</GlassCard></View>; }
 function Option({ title, description, icon, onPress, disabled }: { title: string; description: string; icon: React.ComponentProps<typeof Ionicons>['name']; onPress: () => void; disabled?: boolean }) {
@@ -36,6 +41,13 @@ export function SettingsScreen() {
   const [now, setNow] = useState(() => Date.now());
   const [clearing, setClearing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+
+  // Studio Modals
+  const [showAudioFX, setShowAudioFX] = useState(false);
+  const [showSlowedReverb, setShowSlowedReverb] = useState(false);
+  const [showThemeCreator, setShowThemeCreator] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [showSmartPlaylists, setShowSmartPlaylists] = useState(false);
   useEffect(() => { if (!sleepTimerEndAt) return; const interval = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(interval); }, [sleepTimerEndAt]);
   const remaining = Math.max(0, Math.ceil(((sleepTimerEndAt || 0) - now) / 1000));
   const countdown = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`;
@@ -69,6 +81,59 @@ export function SettingsScreen() {
     <View style={base.header}><IconButton name="arrow-back" label="Voltar" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} /><Text style={[base.title, { fontSize: 27 }]}>Configurações</Text></View>
     <View style={s.intro}><Ionicons name="options-outline" color={colors.accent} size={27} /><View style={{ flex: 1, gap: 6 }}><Text style={s.introTitle}>Do seu jeito.</Text><Text style={base.subtitle}>Ajuste a reprodução e cuide da sua coleção.</Text></View></View>
     {Constants.executionEnvironment === 'storeClient' && <Section title="PRÉVIA NO EXPO GO"><View style={s.setting}><Text style={s.optionDescription}>A notificação e os controles com a tela bloqueada devem ser testados no APK instalado do Hueco Sound.</Text></View></Section>}
+    <Section title="STUDIO & EFEITOS DE ÁUDIO">
+      <Option
+        title="Audio FX Rack"
+        description="Equalizador paramétrico de 5 bandas, compressor dinâmico e stereo width."
+        icon="hardware-chip-outline"
+        onPress={() => setShowAudioFX(true)}
+      />
+      <Option
+        title="Slowed + Reverb Studio"
+        description="Presets instantâneos: Slowed, Sped Up, Nightcore, Vaporwave e Hall Reverb."
+        icon="water-outline"
+        onPress={() => setShowSlowedReverb(true)}
+      />
+      <Option
+        title="Theme Creator Visual"
+        description="Editor de cores de destaque, transparência glass e exportação de temas em JSON."
+        icon="color-palette-outline"
+        onPress={() => setShowThemeCreator(true)}
+      />
+      <Option
+        title="Listening Stats & Time Machine"
+        description="Estatísticas de tempo ouvido, artistas favoritos e recriação de playlists por data."
+        icon="stats-chart-outline"
+        onPress={() => setShowStats(true)}
+      />
+      <Option
+        title="Smart Playlists Automáticas"
+        description="Playlists geradas por regras e critérios de duração, contagem e artistas sem IA."
+        icon="flash-outline"
+        onPress={() => setShowSmartPlaylists(true)}
+      />
+    </Section>
+    <Section title="NORMALIZAÇÃO DE ÁUDIO (VOLUME)">
+      <View style={s.setting}>
+        <Text style={s.optionTitle}>Nivelamento inteligente de volume</Text>
+        <Text style={s.optionDescription}>Evita que uma música toque muito mais alto ou baixo que a anterior.</Text>
+        <View style={s.wrapChips}>
+          {([
+            { id: 'balanced', label: 'Equilibrado (-14 LUFS)' },
+            { id: 'loud', label: 'Mais Alto (-11 LUFS)' },
+            { id: 'quiet', label: 'Suave (-18 LUFS)' },
+            { id: 'off', label: 'Desativado' },
+          ] as const).map(norm => (
+            <Chip
+              key={norm.id}
+              label={norm.label}
+              active={experience.normalizationMode === norm.id}
+              onPress={() => experience.configure({ normalizationMode: norm.id })}
+            />
+          ))}
+        </View>
+      </View>
+    </Section>
     <Section title="MIXAGEM ENTRE MÚSICAS (CROSSFADE)">
       <View style={s.setting}><Text style={s.optionTitle}>Transição contínua</Text><Text style={s.optionDescription}>Mistura o fim de uma música com o início da próxima sem silêncio, igual ao Spotify.</Text><View style={s.wrapChips}><Chip label="Desligada" active={experience.audioTransition === 'direct'} onPress={() => experience.configure({ audioTransition: 'direct' })} />{[1, 2, 3, 5, 8].map(seconds => <Chip key={seconds} label={`${seconds} s`} active={experience.audioTransition === 'fade' && experience.transitionSeconds === seconds} onPress={() => experience.configure({ audioTransition: 'fade', transitionSeconds: seconds })} />)}</View></View>
       {experience.audioTransition === 'fade' && <View style={s.setting}><Text style={s.optionTitle}>Curva da mixagem</Text><View style={s.wrapChips}><Chip label="Suave (DJ)" active={experience.fadeCurve === 'smooth'} onPress={() => experience.configure({ fadeCurve: 'smooth' })} /><Chip label="Linear" active={experience.fadeCurve === 'linear'} onPress={() => experience.configure({ fadeCurve: 'linear' })} /></View></View>}
@@ -182,7 +247,14 @@ export function SettingsScreen() {
     </Section>
     <Section title="HUECO SOUND"><Option title="Sobre, créditos e termos" description="ZhyrSnow, identidade e termos do aplicativo." icon="information-circle-outline" onPress={() => router.push('/about')} /></Section>
     <View style={s.footer}><HuecoLogo width={200} /><Text style={s.footerText}>ZhyrSnow · Hueco Sound 1.3.1</Text></View>
-  </ScrollView><ConfirmDialog visible={clearing} title="Limpar histórico?" description="As músicas recentes e o histórico de busca serão apagados. Suas playlists e curtidas continuam salvas." confirmLabel="Limpar" onClose={() => setClearing(false)} onConfirm={() => { clearHistory(); void AsyncStorage.multiRemove(['@hueco_search_history_v1', '@liner_search_history_v1']).catch(() => undefined); setClearing(false); notify('Histórico limpo.'); }} /></View>;
+  </ScrollView>
+  <ConfirmDialog visible={clearing} title="Limpar histórico?" description="As músicas recentes e o histórico de busca serão apagados. Suas playlists e curtidas continuam salvas." confirmLabel="Limpar" onClose={() => setClearing(false)} onConfirm={() => { clearHistory(); void AsyncStorage.multiRemove(['@hueco_search_history_v1', '@liner_search_history_v1']).catch(() => undefined); setClearing(false); notify('Histórico limpo.'); }} />
+  <AudioFXRackModal visible={showAudioFX} onClose={() => setShowAudioFX(false)} />
+  <SlowedReverbModal visible={showSlowedReverb} onClose={() => setShowSlowedReverb(false)} />
+  <ThemeCreatorModal visible={showThemeCreator} onClose={() => setShowThemeCreator(false)} />
+  <ListeningStatsModal visible={showStats} onClose={() => setShowStats(false)} />
+  <SmartPlaylistModal visible={showSmartPlaylists} onClose={() => setShowSmartPlaylists(false)} />
+</View>;
 }
 
 const s = StyleSheet.create({
