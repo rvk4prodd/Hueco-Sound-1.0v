@@ -11,6 +11,7 @@ import { discardPreparedSource, originalPlaybackSource, preparePlaybackSource } 
 import { useExperienceStore } from "../preferences/experience";
 import { useAudioFXStore } from "../preferences/audioFX";
 import { mixPoints } from './mixSettings';
+import { tracePlayback } from './playbackTrace';
 
 export interface PlayerState {
   currentTrack: Track | null;
@@ -143,7 +144,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const url = await resolveAudioStream(track.id, track.title, track.artists, {
         durationMs: track.durationMs, signal, forceRefresh: forceRefresh || attempt > 0, excludeUrls: excluded,
       });
-      try { return await preparePlaybackSource(url, signal); }
+      tracePlayback('source-resolved', { trackId: track.id, attempt, refresh: forceRefresh });
+      try { const prepared = await preparePlaybackSource(url, signal); tracePlayback('source-ready', { trackId: track.id, cached: prepared.startsWith('file:') }); return prepared; }
       catch (error) {
         if (signal?.aborted || isAbortError(error) || attempt > 0) throw error;
         excluded.push(url);
@@ -297,6 +299,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       // Prefetched tracks skip loadAndPlay; recover their expired/broken source here too.
       if (desiredPlaying && activeLoadVersion !== version && recoveredTrackId !== status.trackId && !getPlaybackTrack(get().currentTrack!).streamUrl) {
         recoveredTrackId = status.trackId;
+        tracePlayback('recovery', { trackId: status.trackId, position: get().positionMs });
         recoveryHoldPosition = get().positionMs + 3_000;
         clearApiCaches?.();
         if (status.sourceUrl) discardPreparedSource(status.sourceUrl);
@@ -372,6 +375,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
   async function startPlayback(track: Track, newQueue?: Track[], freshTraversal = true, forceRefresh = false, restorePosition = 0, initialExclusions: string[] = [], playlistId?: string): Promise<void> {
     const version = ++requestVersion;
+    tracePlayback('request', { trackId: track.id, version, restorePosition, forceRefresh });
     if (!get().hydrated) {
       await get().loadSavedData();
       if (requestVersion !== version) return;
@@ -388,7 +392,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       queue: queue.slice(0, MAX_QUEUE),
       isLoading: true,
       isPlaying: false,
-      ...(playlistId !== undefined ? { activePlaylistId: playlistId } : {}),
+      ...(playlistId !== undefined || freshTraversal ? { activePlaylistId: playlistId ?? null } : {}),
     });
     if (freshTraversal) { resetTraversal(track); recoveredTrackId = null; }
     selectTrack(track, version);

@@ -282,3 +282,69 @@ it('does not apply a second entrance fade after a short dual deck transition', a
   expect(handedOver).toHaveBeenCalledExactlyOnceWith(true);
   expect(player.volume).toBeCloseTo(.7); manager.stop();
 });
+
+it('escapes a native seek that never settles during the fourth song handover', async () => {
+  vi.useFakeTimers();
+  const manager = new AudioManager(); const { player } = await start(manager);
+  for (const next of [b, c, d]) {
+    await manager.setUpcoming([next], async t => t.id + '.mp3');
+    const preparing = manager.prepareAuxTrack(next, next.id + '.mp3'); const deck = native.aux.at(-1)!;
+    deck.ready(); await preparing;
+    if (next === d) player.seekTo.mockImplementationOnce(() => new Promise<void>(() => {}));
+    const handedOver = vi.fn(); await manager.executeCrossfade(next, 1, 'linear', 0, handedOver);
+    deck.currentTime = 1.1; await vi.advanceTimersByTimeAsync(25);
+    if (next === d) {
+      await vi.advanceTimersByTimeAsync(6500);
+      expect(manager.activelyCrossfading).toBe(false);
+      expect(handedOver).toHaveBeenCalledExactlyOnceWith(false);
+      expect(player.volume).toBeCloseTo(.7);
+    } else expect(handedOver).toHaveBeenCalledExactlyOnceWith(true);
+  }
+  manager.stop();
+});
+
+it('detects a prefetched track stuck at zero after three successful tracks with no further native events', async () => {
+  vi.useFakeTimers();
+  const manager = new AudioManager(); const { player, updates } = await start(manager);
+  for (const next of [b, c, d]) {
+    await manager.setUpcoming([next], async t => t.id + '.mp3');
+    player.ready({ currentTime: 120, didJustFinish: true, playing: false });
+    player.skipTo(player.currentIndex + 1);
+    if (next !== d) player.ready({ currentTime: 1 });
+  }
+  await vi.advanceTimersByTimeAsync(12500);
+  expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({ trackId: 'd', currentTime: 0, error: expect.any(String) }));
+  manager.stop();
+});
+
+it('does not swallow native source errors while the native index is transiently minus one', async () => {
+  const manager = new AudioManager(); const { player, updates } = await start(manager);
+  player.ready({ currentIndex: -1, error: { message: 'Source error', code: 2004 } });
+  expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({ trackId: 'a', error: 'Source error (código 2004)' }));
+  manager.stop();
+});
+
+it('does not freeze the Android incoming deck when the native playlist advances first', async () => {
+  vi.useFakeTimers();
+  const manager = new AudioManager(); const { player } = await start(manager);
+  await manager.setUpcoming([b], async () => 'b.mp3');
+  const preparing = manager.prepareAuxTrack(b, 'b.mp3'); const deck = native.aux[0]; deck.ready(); await preparing;
+  const handedOver = vi.fn(); await manager.executeCrossfade(b, 2, 'linear', 0, handedOver);
+  player.skipTo(1); player.ready({ playing: false, currentTime: 0 });
+  expect(deck.pause).not.toHaveBeenCalled();
+  deck.currentTime = 2.1; await vi.advanceTimersByTimeAsync(25);
+  expect(handedOver).toHaveBeenCalledExactlyOnceWith(true);
+  expect(manager.activelyCrossfading).toBe(false); manager.stop();
+});
+
+it('keeps the native queue bounded over forty automatic track changes', async () => {
+  const manager = new AudioManager(); const { player } = await start(manager);
+  for (let i = 1; i <= 40; i++) {
+    const next = { ...a, id: 'sequence-' + i };
+    await manager.setUpcoming([next], async t => t.id + '.mp3');
+    player.skipTo(player.currentIndex + 1); player.ready({ currentTime: 1 });
+    expect(manager.currentTrackId).toBe(next.id);
+    expect(player.sources.length).toBeLessThanOrEqual(3);
+  }
+  manager.stop();
+});

@@ -6,6 +6,7 @@ import { originalPlaybackSource, retainPreparedSources } from "./prepareSource";
 import { calculateCrossfadeFactors, CrossfadeCurve, transitionGain } from './transitions';
 import type { AudioTransition, FadeCurve } from '../preferences/experience';
 import { applyNativeEffects, type NativeEffectsConfig } from './nativeEffects';
+import { nativeDeadline, tracePlayback } from './playbackTrace';
 
 export interface PlaybackStatus {
   trackId: string;
@@ -101,9 +102,17 @@ export class AudioManager {
     return this.tracks[index]?.id ?? null;
   }
   get activelyCrossfading(): boolean { return this.isCrossfading; }
+  diagnostics() {
+    const status = this.player?.currentStatus;
+    return { trackId: this.currentTrackId, index: status?.currentIndex ?? -1, loaded: status?.isLoaded ?? false,
+      playing: status?.playing ?? false, buffering: status?.isBuffering ?? false, position: status?.currentTime ?? 0,
+      mixing: this.isCrossfading, handover: this.handoverPending, auxReady: this.auxPlayer?.isLoaded ?? false,
+      auxPosition: this.auxPlayer?.currentTime ?? 0, tracks: this.tracks.length };
+  }
 
   async loadAndPlay(url: string, track: Track, onStatusUpdate: (status: PlaybackStatus) => void, options: PlaybackOptions): Promise<void> {
     this.stop();
+    tracePlayback('load', { trackId: track.id, source: url.startsWith('file:') ? 'file' : 'network' });
     const version = this.version;
     await this.init();
     if (version !== this.version) return;
@@ -124,19 +133,24 @@ export class AudioManager {
     this.applyVolume();
 
     let playbackError: string | null = null;
-    let lastStatus: PlaybackStatus | null = null, lastProgressAt = Date.now(), healthFailed = false;
+    let lastStatus: PlaybackStatus | null = null, lastProgressAt = Date.now(), healthFailed = false, lastTraceAt = 0;
     this.subscriptions = [
       player.addListener("playlistStatusUpdate", (status) => {
         if (this.player !== player || version !== this.version) return;
 
         const error = errorMessage((status as NativeStatus).error);
+        if (error) tracePlayback('native-error', { trackId: this.currentTrackId, index: status.currentIndex, loaded: status.isLoaded });
         if (error) playbackError = error;
         if (status.isLoaded || error || status.currentTime > 0) {
           this.preparedResolve?.(!error);
         }
 
         // Native transitions briefly report -1; never attribute them to the first song.
-        if (status.currentIndex < 0) return;
+        if (status.currentIndex < 0) {
+          if (error) onStatusUpdate({ ...status, trackId: this.reportedTrackId || track.id,
+            sourceUrl: originalPlaybackSource(this.urls[this.tracks.findIndex(t => t.id === this.reportedTrackId)] || url), error });
+          return;
+        }
         const effectiveIndex = status.currentIndex;
         const playingTrack = this.tracks[effectiveIndex];
         if (!playingTrack) {
@@ -155,7 +169,7 @@ export class AudioManager {
         this.lastDuration = status.duration > 0 ? status.duration : (playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0);
         this.applyVolume();
 
-        if (this.isCrossfading && !this.handoverPending && status.isLoaded && !status.isBuffering && !status.didJustFinish && status.currentTime < status.duration - .6) {
+        if (this.isCrossfading && playingTrack.id === this.reportedTrackId && !this.handoverPending && status.isLoaded && !status.isBuffering && !status.didJustFinish && status.currentTime < status.duration - .6) {
           // The notification/headset controls the primary MediaSession. Mirror it to the other deck.
           if (!status.playing && !this.paused) { this.paused = true; this.auxPlayer?.pause(); }
           else if (status.playing && this.paused) { this.paused = false; this.auxPlayer?.play(); }
@@ -170,6 +184,7 @@ export class AudioManager {
         };
         if (!lastStatus || lastStatus.trackId !== currentStatus.trackId || Math.abs(currentStatus.currentTime - lastStatus.currentTime) > .01 || !currentStatus.playing && !currentStatus.isBuffering) lastProgressAt = Date.now();
         lastStatus = currentStatus;
+        if (Date.now() - lastTraceAt >= 5000) { lastTraceAt = Date.now(); tracePlayback('status', this.diagnostics()); }
         onStatusUpdate(currentStatus);
       }),
       player.addListener("trackChanged", ({ currentIndex }) => {
@@ -178,6 +193,13 @@ export class AudioManager {
         if (!playingTrack || playingTrack.id === this.reportedTrackId) return;
         if (this.isCrossfading) return;
         this.reportedTrackId = playingTrack.id;
+        tracePlayback('track-change', { trackId: playingTrack.id, index: currentIndex });
+        // ExoPlayer stops periodic events while not actually playing. Do not keep
+        // the previous track's EOF status (which disables the health watchdog).
+        lastProgressAt = Date.now(); healthFailed = false;
+        lastStatus = { trackId: playingTrack.id, sourceUrl: originalPlaybackSource(this.urls[currentIndex] || url),
+          currentTime: 0, duration: playingTrack.durationMs / 1000, playing: false,
+          isLoaded: false, isBuffering: true, didJustFinish: false, error: null };
         this.incomingFadeComplete = false;
         this.lastTime = 0;
         this.lastDuration = playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0;
@@ -205,6 +227,7 @@ export class AudioManager {
         if (this.paused || this.isCrossfading || (!lastStatus.playing && !lastStatus.isBuffering) || lastStatus.didJustFinish) { lastProgressAt = Date.now(); return; }
         if (Date.now() - lastProgressAt < 12_000) return;
         healthFailed = true;
+        tracePlayback('no-progress', { trackId: lastStatus.trackId, position: lastStatus.currentTime, loaded: lastStatus.isLoaded, buffering: lastStatus.isBuffering, mixing: this.isCrossfading });
         onStatusUpdate({ ...lastStatus, error: 'A fonte de áudio parou de responder.', isBuffering: false, playing: false });
       }, 1_000);
     } catch (error) {
@@ -246,7 +269,12 @@ export class AudioManager {
     if (!player || this.isCrossfading) return;
     const version = ++this.upcomingVersion;
     if (player.currentIndex < 0) return;
-    const current = Math.max(0, player.currentIndex);
+    let current = Math.max(0, player.currentIndex);
+    // Keep only one previous item. Otherwise Media3 retains the entire listening
+    // session, including old file URLs that the bounded cache has already evicted.
+    while (current > 1) {
+      this.tracks.shift(); this.urls.shift(); player.remove(0); current--;
+    }
     const desired = tracks.slice(0, 2);
     const existing = this.tracks.slice(current + 1);
     if (existing.length === desired.length && existing.every((t, i) => t.id === desired[i]?.id)) {
@@ -312,13 +340,15 @@ export class AudioManager {
         if (aux.isLoaded) finish(true);
       }).then(async loaded => {
         if (!loaded || this.auxPlayer !== aux || generation !== this.auxVersion) return false;
-        if (inCueSec > 0) await aux.seekTo(inCueSec);
+        if (inCueSec > 0) await nativeDeadline(aux.seekTo(inCueSec), 'aux-seek');
         return this.auxPlayer === aux && generation === this.auxVersion;
       }).catch(() => false);
       const ready = await this.auxReady;
+      tracePlayback('aux-ready', { trackId: track.id, ready });
       if (!ready && this.auxPlayer === aux && generation === this.auxVersion) this.cleanupAuxPlayer();
       return ready;
     } catch {
+      tracePlayback('aux-failed', { trackId: track.id });
       this.cleanupAuxPlayer();
       return false;
     }
@@ -340,6 +370,7 @@ export class AudioManager {
     const version = this.version;
     this.isCrossfading = true;
     const mixVersion = ++this.mixVersion;
+    tracePlayback('mix-start', { from: this.reportedTrackId, to: nextTrack.id, seconds: durationSec, curve });
 
     const effectiveSec = Math.max(1, Math.min(16, durationSec));
 
@@ -389,7 +420,7 @@ export class AudioManager {
       if (this.paused || this.handoverPending) return;
       stalledMs = aux.currentTime > lastPosition + .001 ? 0 : stalledMs + elapsedTick;
       lastPosition = aux.currentTime;
-      if (stalledMs > 8_000) { this.abortCrossfade(); onHandover(false); return; }
+      if (stalledMs > 8_000) { tracePlayback('mix-stalled', { trackId: nextTrack.id, auxPosition: aux.currentTime }); this.abortCrossfade(); onHandover(false); return; }
       if (!aux.isLoaded) return;
 
       // Advance with audio, not wall time: pause and buffering must freeze the mix.
@@ -421,6 +452,7 @@ export class AudioManager {
   private async finalizeCrossfade(nextTrack: Track, finalPositionSec: number, onHandover: (handedOverNatively?: boolean) => void, mixVersion: number): Promise<void> {
     if (this.handoverPending) return;
     this.handoverPending = true;
+    tracePlayback('handover-start', { trackId: nextTrack.id, position: finalPositionSec });
     this.crossfadeSubscription?.remove(); this.crossfadeSubscription = null;
     const version = this.version;
     if (this.crossfadeWatchdog) {
@@ -454,7 +486,7 @@ export class AudioManager {
         });
         if (version !== this.version || mixVersion !== this.mixVersion || !this.isCrossfading) return;
         if (finalPositionSec > 0) {
-          await player.seekTo(this.auxPlayer?.currentTime || finalPositionSec);
+          await nativeDeadline(player.seekTo(this.auxPlayer?.currentTime || finalPositionSec), 'handover-seek');
         }
         if (version !== this.version || mixVersion !== this.mixVersion || !this.isCrossfading) return;
         this.lastTime = this.auxPlayer?.currentTime || finalPositionSec;
@@ -473,6 +505,7 @@ export class AudioManager {
     this.handoverPending = false;
     this.incomingFadeComplete = handedOverNatively;
     this.applyVolume();
+    tracePlayback('handover-end', { trackId: nextTrack.id, success: handedOverNatively });
 
     // Activate lockscreen metadata for Track B
     if (handedOverNatively) {
@@ -564,7 +597,7 @@ export class AudioManager {
     if (this.isCrossfading) {
       this.abortCrossfade();
     }
-    await this.player?.seekTo(Math.max(0, positionMs) / 1000);
+    if (this.player) await nativeDeadline(this.player.seekTo(Math.max(0, positionMs) / 1000), 'seek');
   }
 
   setVolume(value: number): void {

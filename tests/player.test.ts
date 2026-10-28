@@ -293,3 +293,10 @@ it('a retry waiting on native initialization cannot replace a newer track select
   await state().playTrack(b, [a, b]); ready(); await retry;
   expect(state().currentTrack?.id).toBe('b');
 });
+
+it('clears a previous playlist mix override when playback starts outside that playlist', async () => {
+  await state().playTrack(a, [a, b], 'old-playlist');
+  expect(state().activePlaylistId).toBe('old-playlist');
+  await state().playTrack(c, [c, d]);
+  expect(state().activePlaylistId).toBeNull();
+});

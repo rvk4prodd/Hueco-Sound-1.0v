@@ -14,6 +14,7 @@ import { usePlayerStore } from '../player/usePlayerStore';
 import { waitForAudio } from '../player/waitForAudio';
 import { MIX_PRESETS, mixPoints, mixPreset } from '../player/mixSettings';
 import { calculateCrossfadeFactors } from '../player/transitions';
+import { nativeDeadline, tracePlayback } from '../player/playbackTrace';
 
 export interface PlaylistMixStudioProps {
   visible: boolean; playlist: Playlist; initialPairIndex?: number;
@@ -81,7 +82,8 @@ function MixEditor({ playlist, initialPairIndex, onClose, onSave }: PlaylistMixS
       current.players = [a, b]; a.volume = 0; b.volume = 0;
       await Promise.all([waitForAudio(a, current.controller.signal), waitForAudio(b, current.controller.signal)]);
       if (!active()) return;
-      await Promise.all([a.seekTo(Math.max(0, points.out - 2)), b.seekTo(points.in)]);
+      tracePlayback('preview-start', { from: trackA.id, to: trackB.id, seconds: points.seconds });
+      await Promise.all([nativeDeadline(a.seekTo(Math.max(0, points.out - 2)), 'preview-out'), nativeDeadline(b.seekTo(points.in), 'preview-in')]);
       if (!active()) return;
       a.volume = usePlayerStore.getState().volume; a.play(); setPreview('playing');
       let incoming = false, lastA = a.currentTime, lastB = b.currentTime, stalledTicks = 0;
