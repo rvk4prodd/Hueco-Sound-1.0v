@@ -4,3 +4,4 @@ export interface NativeEffectsConfig {
   speed: number; linked: boolean; pitch: number;
 }
 export function applyNativeEffects(_config: NativeEffectsConfig): boolean { return false; }
+export function applyDeckTone(_id: string, _tone: import('./mixAutomation').DeckTone): boolean { return false; }

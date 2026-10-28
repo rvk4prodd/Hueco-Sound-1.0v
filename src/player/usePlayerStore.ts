@@ -236,14 +236,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     let inCueSec = 0;
     let curve: import('./transitions').CrossfadeCurve = 'overlap';
     let isTransitionActive = false;
+    let automation: import('./mixAutomation').MixAutomation = {};
 
     if (mixSettings?.enabled) {
       isTransitionActive = true;
       const pairKey = `${currentTrack.id}->${nextTrack.id}`;
       const conf = (mixSettings.customTransitions && mixSettings.customTransitions[pairKey]) || mixSettings.defaultConfig || { durationSeconds: 4, volume: 'overlap' };
+      automation = { volume: conf.volume, eq: conf.eq, effect: conf.effect, amount: conf.effectAmount, eqAmount: conf.eqAmount, curves: conf.curves };
       durationSec = conf.durationSeconds || 4;
       curve = conf.volume || 'overlap';
-      outPointSec = conf.outPointSec !== undefined ? conf.outPointSec : Math.max(0, status.duration - durationSec);
+      outPointSec = conf.outPointSec ?? (conf.outCueSec !== undefined ? status.duration - conf.outCueSec : Math.max(0, status.duration - durationSec));
       inCueSec = conf.inPointSec !== undefined ? conf.inPointSec : (conf.inCueSec ?? 0);
     } else {
       const exp = useExperienceStore.getState();
@@ -287,7 +289,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         }
         if (get().currentTrack?.id !== nextTrack.id) selectTrack(nextTrack, version);
         syncUpcoming();
-      });
+      }, automation);
     }
   }
 

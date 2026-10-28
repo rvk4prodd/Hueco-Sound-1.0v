@@ -16,12 +16,16 @@ export interface LyricLine {
   synced?: boolean;
 }
 
-export type MixVolumeType = 'overlap' | 'fade' | 'cut' | 'equal_power' | 'linear';
+export type MixVolumeType = 'overlap' | 'fade' | 'rise' | 'cut' | 'equal_power' | 'linear';
 export type MixEQType = 'end_bass_swap' | 'center_bass_swap' | 'early_bass_swap' | 'bass_cut' | 'flat' | 'none';
 export type MixEffectType = 'echo' | 'low_pass' | 'high_pass' | 'reverb' | 'rise' | 'none';
 export type MixPreset = 'auto' | 'custom' | 'fade' | 'rise' | 'blend' | 'bass_drop';
 
 export interface TrackTransitionConfig {
+  curves?: import('../player/mixAutomation').MixCurves;
+  effectAmount?: number;
+  eqAmount?: number;
+  bpm?: number;
   durationSeconds: number;
   volume: MixVolumeType;
   eq: MixEQType;

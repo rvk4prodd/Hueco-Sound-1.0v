@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
@@ -13,7 +13,11 @@ import { getPlaybackTrack } from '../library/useDeviceLibraryStore';
 import { usePlayerStore } from '../player/usePlayerStore';
 import { waitForAudio } from '../player/waitForAudio';
 import { MIX_PRESETS, mixPoints, mixPreset } from '../player/mixSettings';
-import { calculateCrossfadeFactors } from '../player/transitions';
+import { mixFrame, barsToSeconds } from '../player/mixAutomation';
+import { applyDeckTone } from '../player/nativeEffects';
+import { audioManager } from '../player/audioManager';
+import { MixTimeline } from './MixTimeline';
+import { releasePlayer } from '../player/releasePlayer';
 import { nativeDeadline, tracePlayback } from '../player/playbackTrace';
 
 export interface PlaylistMixStudioProps {
@@ -48,13 +52,13 @@ function MixEditor({ playlist, initialPairIndex, onClose, onSave }: PlaylistMixS
   const stop = () => {
     const current = audition.current; audition.current = null;
     current?.controller.abort(); if (current?.timer) clearInterval(current.timer);
-    current?.players.forEach(p => { try { p.pause(); p.remove(); } catch { /* already released */ } });
+    current?.players.forEach(releasePlayer);
     setPreview('idle');
   };
   useEffect(() => () => {
     const current = audition.current; audition.current = null; current?.controller.abort();
     if (current?.timer) clearInterval(current.timer);
-    current?.players.forEach(p => { try { p.pause(); p.remove(); } catch { /* released */ } });
+    current?.players.forEach(releasePlayer);
   }, []);
   const edit = (partial: Partial<TrackTransitionConfig>) => {
     stop(); setError(null);
@@ -78,6 +82,7 @@ function MixEditor({ playlist, initialPairIndex, onClose, onSave }: PlaylistMixS
       if (usePlayerStore.getState().isPlaying || usePlayerStore.getState().isLoading) await usePlayerStore.getState().togglePlayPause();
       const urls = await Promise.all([source(trackA, current.controller.signal), source(trackB, current.controller.signal)]);
       if (!active()) return;
+      await audioManager.init();
       const a = createAudioPlayer({ uri: urls[0] }, { updateInterval: 100 }), b = createAudioPlayer({ uri: urls[1] }, { updateInterval: 100 });
       current.players = [a, b]; a.volume = 0; b.volume = 0;
       await Promise.all([waitForAudio(a, current.controller.signal), waitForAudio(b, current.controller.signal)]);
@@ -96,15 +101,15 @@ function MixEditor({ playlist, initialPairIndex, onClose, onSave }: PlaylistMixS
         if (!incoming && a.currentTime >= points.out) { b.play(); incoming = true; stalledTicks = 0; }
         if (!incoming) return;
         const progress = (b.currentTime - points.in) / points.seconds;
-        const gains = calculateCrossfadeFactors(progress, config.volume);
+        const gains = mixFrame(progress, { volume: config.volume, eq: config.eq, effect: config.effect, amount: config.effectAmount, eqAmount: config.eqAmount, curves: config.curves });
+        applyDeckTone(a.id, gains.outgoingTone); applyDeckTone(b.id, gains.incomingTone);
         const volume = usePlayerStore.getState().volume;
-        a.volume = gains.outFactor * volume; b.volume = gains.inFactor * volume;
+        a.volume = gains.out * volume; b.volume = gains.in * volume;
         if (progress >= 1) a.pause();
         if (b.currentTime >= points.in + points.seconds + 2) stop();
       }, 100);
     } catch (e) { if (active()) { stop(); setError(e instanceof Error ? e.message : 'Não foi possível ouvir a prévia.'); } }
   };
-  const ranges = Array.from({ length: 24 }, (_, i) => calculateCrossfadeFactors(i / 23, config.volume));
   const customized = Object.keys(pairs).length;
   return <View style={s.container}>
     <View style={s.header}><View style={{ flex: 1 }}><Text style={s.title}>Transições</Text><Text style={s.muted} numberOfLines={1}>{playlist.name}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Fechar transições" onPress={close} style={s.icon}><Ionicons name="close" size={24} color={colors.text} /></Pressable></View>
@@ -114,13 +119,24 @@ function MixEditor({ playlist, initialPairIndex, onClose, onSave }: PlaylistMixS
         <View style={s.segment}>{(['playlist', 'pair'] as const).map(value => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: scope === value }} style={[s.segmentItem, scope === value && s.selected]} onPress={() => { stop(); setScope(value); setAdvanced(false); }}><Text style={s.label}>{value === 'playlist' ? 'Playlist inteira' : 'Por transição'}</Text></Pressable>)}</View>
         <View style={[s.editor, !enabled && { opacity: .45 }]} pointerEvents={enabled ? 'auto' : 'none'}>
           <View style={s.row}><Pressable accessibilityRole="button" accessibilityLabel="Par anterior" disabled={pairIndex <= 0} onPress={() => move(pairIndex - 1)} style={s.icon}><Ionicons name="chevron-back" size={22} color={pairIndex ? colors.text : colors.border} /></Pressable><View style={{ flex: 1 }}><Text style={s.kicker}>TRANSIÇÃO {pairIndex + 1} DE {playlist.tracks.length - 1}</Text><Text style={s.muted}>{scopeLabel}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Próximo par" disabled={pairIndex >= playlist.tracks.length - 2} onPress={() => move(pairIndex + 1)} style={s.icon}><Ionicons name="chevron-forward" size={22} color={pairIndex < playlist.tracks.length - 2 ? colors.text : colors.border} /></Pressable></View>
-          <View style={s.tracks}>{[trackA, trackB].map((track, index) => <View key={index} style={s.track}><Cover uri={track.coverUrl} seed={track.id} size={64} radius={12} /><Text style={s.label} numberOfLines={1}>{track.title}</Text><Text style={s.muted} numberOfLines={1}>{index ? 'Entrada' : 'Saída'} · {track.artists}</Text></View>)}</View>
-          <View style={s.diagram} accessibilityLabel="Curvas de volume das duas músicas">{ranges.map((gain, i) => <View key={i} style={s.diagramColumn}><View style={{ height: gain.outFactor * 34 + 2, backgroundColor: '#83b5f4', borderRadius: 2 }} /><View style={{ height: gain.inFactor * 34 + 2, backgroundColor: colors.accent, borderRadius: 2 }} /></View>)}</View>
-          <Text style={s.kicker}>ESTILO</Text><View style={s.segment}>{MIX_PRESETS.map(preset => <Pressable key={preset.id} accessibilityRole="button" accessibilityState={{ selected: config.preset === preset.id }} onPress={() => edit(mixPreset(preset.id))} style={[s.segmentItem, config.preset === preset.id && s.selected]}><Text style={s.label}>{preset.label}</Text></Pressable>)}</View>
+          <View style={s.row}><Cover uri={trackA.coverUrl} seed={trackA.id} size={48} radius={8} /><View style={{ flex: 1 }}><Text style={s.heading}>{trackA.title}</Text><Text style={s.muted}>{trackA.artists}</Text></View><Text style={s.muted}>Saída</Text></View>
+          <View><MixTimeline key={trackA.id+'->'+trackB.id} a={trackA} b={trackB} seconds={points.seconds} out={points.out} cue={points.in} config={{ volume: config.volume, eq: config.eq, effect: config.effect, amount: config.effectAmount, eqAmount: config.eqAmount, curves: config.curves }} onChange={curves => edit({ curves, preset: 'custom' })} /><Pressable accessibilityLabel="Ouvir prévia no gráfico" onPress={() => void listen()} style={{ position: 'absolute', left: '44%', top: '39%', width: 44, height: 44, borderRadius: 22, backgroundColor: '#080c0e', alignItems: 'center', justifyContent: 'center' }}><Ionicons name={preview === 'idle' ? 'play' : 'stop'} size={20} color="white" /></Pressable></View>
+          <View style={s.row}><Cover uri={trackB.coverUrl} seed={trackB.id} size={48} radius={8} /><View style={{ flex: 1 }}><Text style={s.heading}>{trackB.title}</Text><Text style={s.muted}>{trackB.artists}</Text></View><Text style={s.muted}>Entrada</Text></View>
+          <View style={s.row}>
+            <MixChoice label="Volume" value={config.volume} choices={VOLUMES} onChange={volume => edit({ volume: volume as TrackTransitionConfig['volume'], curves: undefined, preset: 'custom' })} />
+            <MixChoice label="EQ" value={config.eq} choices={EQS} onChange={eq => edit({ eq: eq as TrackTransitionConfig['eq'], preset: 'custom' })} />
+            <MixChoice label="Efeitos" value={config.effect} choices={EFFECTS} onChange={effect => edit({ effect: effect as TrackTransitionConfig['effect'], preset: 'custom' })} />
+          </View>
+          {config.eq !== 'none' && config.eq !== 'flat' && <View><Text style={s.label}>Redução de graves · {(config.eqAmount ?? 18).toFixed(0)} dB</Text><Slider minimumValue={0} maximumValue={24} step={1} value={config.eqAmount ?? 18} onValueChange={eqAmount => edit({ eqAmount, preset: 'custom' })} accessibilityLabel="Intensidade da troca de graves" minimumTrackTintColor={colors.accent} /></View>}
+          {config.effect !== 'none' && <View><Text style={s.label}>Intensidade do efeito · {Math.round((config.effectAmount ?? .6) * 100)}%</Text><Slider minimumValue={0} maximumValue={1} step={.05} value={config.effectAmount ?? .6} onValueChange={effectAmount => edit({ effectAmount, preset: 'custom' })} accessibilityLabel="Intensidade do efeito de transição" minimumTrackTintColor={colors.accent} /></View>}
+          <View style={s.row}><Text style={s.label}>BPM manual · 4/4</Text><TextInput key={config.bpm ?? 120} accessibilityLabel="BPM manual" defaultValue={String(config.bpm ?? 120)} keyboardType="number-pad" style={{ color: colors.text, borderColor: colors.border, borderWidth: 1, borderRadius: 8, padding: 10, minWidth: 70 }} onEndEditing={e => { const bpm = Math.max(40, Math.min(240, Number(e.nativeEvent.text) || 120)); edit({ bpm, ...(config.bars ? { durationSeconds: barsToSeconds(config.bars, bpm) } : {}) }); }} /></View>
+          <View style={s.segment}>{([2, 4, 8, 16] as const).map(bars => <Pressable key={bars} style={[s.segmentItem, config.bars === bars && s.selected]} onPress={() => edit({ bars, durationSeconds: barsToSeconds(bars, config.bpm ?? 120), preset: 'custom' })}><Text style={s.label}>{bars} comp.</Text></Pressable>)}</View>
+          <Text style={s.kicker}>ESTILO</Text><View style={[s.segment, { flexWrap: 'wrap' }]}>{MIX_PRESETS.map(preset => <Pressable key={preset.id} accessibilityRole="button" accessibilityState={{ selected: config.preset === preset.id }} onPress={() => edit(mixPreset(preset.id))} style={[s.segmentItem, config.preset === preset.id && s.selected]}><Text style={s.label}>{preset.label}</Text></Pressable>)}</View>
           <Text style={s.description}>{MIX_PRESETS.find(p => p.id === config.preset)?.description || 'Transição personalizada.'}</Text>
-          <View style={s.row}><Text style={s.heading}>Duração</Text><Text style={s.value}>{config.durationSeconds.toFixed(1)} s</Text></View><Slider accessibilityLabel="Duração da transição em segundos" minimumValue={1} maximumValue={12} step={.5} value={config.durationSeconds} onValueChange={value => edit({ durationSeconds: value, preset: 'custom' })} minimumTrackTintColor={colors.accent} maximumTrackTintColor={colors.border} thumbTintColor={colors.text} />
-          <View style={s.row}><Text style={s.muted}>Rápida · 1 s</Text><Text style={s.muted}>Longa · 12 s</Text></View>
+          <View style={s.row}><Text style={s.heading}>Duração</Text><Text style={s.value}>{points.seconds.toFixed(1)} s</Text></View><Slider accessibilityLabel="Duração da transição em segundos" minimumValue={1} maximumValue={Math.max(1, Math.min(96, durationA / 2, durationB / 2))} step={.5} value={points.seconds} onValueChange={value => edit({ durationSeconds: value, bars: undefined, preset: 'custom' })} minimumTrackTintColor={colors.accent} maximumTrackTintColor={colors.border} thumbTintColor={colors.text} />
+          <View style={s.row}><Text style={s.muted}>Rápida · 1 s</Text><Text style={s.muted}>Longa · 96 s</Text></View>
           <Pressable accessibilityRole="button" accessibilityLabel={preview === 'idle' ? 'Ouvir transição' : 'Parar prévia'} disabled={!durationA || !durationB} style={s.preview} onPress={() => void listen()}>{preview === 'loading' ? <ActivityIndicator color={colors.background} /> : <Ionicons name={preview === 'playing' ? 'stop' : 'play'} size={20} color={colors.background} />}<Text style={s.previewText}>{preview === 'loading' ? 'Carregando… toque para cancelar' : preview === 'playing' ? 'Parar prévia' : 'Ouvir transição'}</Text></Pressable>
+          <Pressable onPress={() => edit({ curves: undefined, preset: 'custom' })}><Text style={s.muted}>Restaurar curva de volume</Text></Pressable>
           <Text style={s.muted}>A prévia pausa a música atual. Seus ajustes entram em vigor ao salvar.</Text>
           {error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
           {scope === 'pair' && <><Pressable accessibilityRole="button" accessibilityState={{ expanded: advanced }} style={s.row} onPress={() => setAdvanced(!advanced)}><Text style={s.heading}>Ajustar pontos de entrada e saída</Text><Ionicons name={advanced ? 'chevron-up' : 'chevron-down'} color={colors.muted} size={18} /></Pressable>{advanced && <View style={s.card}><Text style={s.label}>Começar a saída em {points.out.toFixed(1)} s</Text><Slider accessibilityLabel="Ponto de saída em segundos" minimumValue={0} maximumValue={Math.max(1, durationA - points.seconds)} step={.1} value={points.out} onValueChange={value => edit({ outPointSec: value, preset: 'custom' })} minimumTrackTintColor={colors.accent} /><Text style={s.label}>Entrar na próxima em {points.in.toFixed(1)} s</Text><Slider accessibilityLabel="Ponto de entrada em segundos" minimumValue={0} maximumValue={Math.max(1, durationB - points.seconds)} step={.1} value={points.in} onValueChange={value => edit({ inPointSec: value, preset: 'custom' })} minimumTrackTintColor={colors.accent} /></View>}<Pressable accessibilityRole="button" style={s.reset} onPress={() => { stop(); setPairs(previous => { const next = { ...previous }; delete next[key]; return next; }); }}><Text style={s.muted}>Usar o padrão da playlist neste par</Text></Pressable></>}
@@ -130,6 +146,15 @@ function MixEditor({ playlist, initialPairIndex, onClose, onSave }: PlaylistMixS
     </ScrollView><View style={s.footer}><Pressable accessibilityRole="button" onPress={save} style={s.save}><Text style={s.previewText}>Salvar transições</Text></Pressable></View>
   </View>;
 }
+
+const VOLUMES = [['equal_power', 'Potência igual'], ['overlap', 'Sobrepor'], ['linear', 'Linear'], ['rise', 'Rise'], ['cut', 'Corte']];
+const EQS = [['none', 'Sem EQ'], ['end_bass_swap', 'Graves no fim'], ['center_bass_swap', 'Graves ao centro'], ['early_bass_swap', 'Graves no início'], ['bass_cut', 'Cortar graves']];
+const EFFECTS = [['none', 'Sem efeito'], ['low_pass', 'Passa-baixas'], ['high_pass', 'Passa-altas'], ['reverb', 'Reverb']];
+function MixChoice({ label, value, choices, onChange }: { label: string; value: string; choices: string[][]; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return <View style={{ flex: 1 }}><Pressable style={{ padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 10 }} onPress={() => setOpen(true)}><Text style={s.muted}>{label}</Text><Text style={s.label} numberOfLines={1}>{choices.find(c => c[0] === value)?.[1] || value}⌄</Text></Pressable><Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}><Pressable onPress={() => setOpen(false)} style={{ flex: 1, backgroundColor: '#0009', justifyContent: 'flex-end' }}><View style={{ backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}><Text style={s.heading}>{label}</Text>{choices.map(([id, title]) => <Pressable key={id} style={{ paddingVertical: 18 }} onPress={() => { onChange(id); setOpen(false); }}><Text style={[s.label, value === id && { color: colors.accent }]}>{title}</Text></Pressable>)}</View></Pressable></Modal></View>;
+}
+
 const s = themedStyles(() => ({
  container: { flex: 1, backgroundColor: colors.background }, header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: colors.border }, title: { color: colors.text, fontSize: 25, fontWeight: '800' }, muted: { color: colors.muted, fontSize: 12, lineHeight: 18 }, content: { padding: 20, paddingBottom: 32, gap: 20 }, card: { padding: 16, gap: 12 }, row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, heading: { color: colors.text, fontSize: 15, fontWeight: '600', flexShrink: 1 }, description: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 5 }, label: { color: colors.text, fontSize: 13, fontWeight: '600' }, icon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, segment: { flexDirection: 'row', borderRadius: 14, padding: 4, gap: 4, backgroundColor: colors.surface }, segmentItem: { flex: 1, paddingVertical: 13, alignItems: 'center', borderRadius: 10 }, selected: { backgroundColor: colors.elevated, borderWidth: 1, borderColor: colors.accent }, editor: { gap: 18 }, kicker: { color: colors.accent, fontSize: 11, fontWeight: '700', letterSpacing: 1 }, tracks: { flexDirection: 'row', gap: 24 }, track: { flex: 1, minWidth: 0, gap: 7 }, diagram: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 94, padding: 12, backgroundColor: colors.surface, borderRadius: 14 }, diagramColumn: { flex: 1, gap: 4 }, value: { color: colors.accent, fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] }, preview: { minHeight: 50, borderRadius: 25, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, paddingHorizontal: 12 }, previewText: { color: colors.background, fontSize: 14, fontWeight: '700' }, error: { color: colors.danger, fontSize: 13 }, reset: { minHeight: 44, justifyContent: 'center' }, footer: { borderTopWidth: 1, borderColor: colors.border, padding: 16 }, save: { borderRadius: 25, backgroundColor: colors.accent, minHeight: 50, alignItems: 'center', justifyContent: 'center' },
 }));

@@ -3,9 +3,10 @@ import type { AudioPlayer, AudioPlaylist, AudioPlaylistStatus } from "expo-audio
 import { isRunningInExpoGo } from "expo";
 import { Track } from "../types";
 import { originalPlaybackSource, retainPreparedSources } from "./prepareSource";
-import { calculateCrossfadeFactors, CrossfadeCurve, transitionGain } from './transitions';
+import { CrossfadeCurve, transitionGain } from './transitions';
 import type { AudioTransition, FadeCurve } from '../preferences/experience';
-import { applyNativeEffects, type NativeEffectsConfig } from './nativeEffects';
+import { applyNativeEffects, applyDeckTone, type NativeEffectsConfig } from './nativeEffects';
+import { FLAT_TONE, mixFrame, type MixAutomation } from './mixAutomation';
 import { nativeDeadline, tracePlayback } from './playbackTrace';
 
 export interface PlaybackStatus {
@@ -364,6 +365,7 @@ export class AudioManager {
     curve: CrossfadeCurve = 'overlap',
     inCueSec = 0,
     onHandover: (handedOverNatively?: boolean) => void,
+    automation: MixAutomation = {},
   ): Promise<void> {
     const player = this.player;
     if (!player || this.isCrossfading) return;
@@ -372,7 +374,7 @@ export class AudioManager {
     const mixVersion = ++this.mixVersion;
     tracePlayback('mix-start', { from: this.reportedTrackId, to: nextTrack.id, seconds: durationSec, curve });
 
-    const effectiveSec = Math.max(1, Math.min(16, durationSec));
+    const effectiveSec = Math.max(1, Math.min(96, durationSec));
 
     // Ensure auxPlayer is ready
     if (!this.auxPlayer || this.preparedAuxTrackId !== nextTrack.id || this.preparedAuxInCue !== inCueSec) {
@@ -426,7 +428,9 @@ export class AudioManager {
       // Advance with audio, not wall time: pause and buffering must freeze the mix.
       const elapsed = Math.max(0, aux.currentTime - startPosition) * 1000;
       const progress = Math.min(1, Math.max(0, elapsed / totalMs));
-      const { outFactor, inFactor } = calculateCrossfadeFactors(progress, curve);
+      const frame = mixFrame(progress, { volume: curve, ...automation });
+      const outFactor = frame.out, inFactor = frame.in;
+      applyDeckTone?.(player.id, frame.outgoingTone); applyDeckTone?.(aux.id, frame.incomingTone);
 
       try {
         const masterVolume = (this.options?.volume ?? 1) * this.normalizationFactor;
@@ -504,6 +508,7 @@ export class AudioManager {
     this.isCrossfading = false;
     this.handoverPending = false;
     this.incomingFadeComplete = handedOverNatively;
+    if (player) applyDeckTone?.(player.id, FLAT_TONE);
     this.applyVolume();
     tracePlayback('handover-end', { trackId: nextTrack.id, success: handedOverNatively });
 
@@ -516,6 +521,7 @@ export class AudioManager {
   }
 
   abortCrossfade(): void {
+    if (this.player) applyDeckTone?.(this.player.id, FLAT_TONE);
     this.mixVersion++;
     this.crossfadeSubscription?.remove(); this.crossfadeSubscription = null;
     if (this.crossfadeWatchdog) {
@@ -536,6 +542,7 @@ export class AudioManager {
     this.auxVersion++;
     this.cancelAuxReady?.(); this.cancelAuxReady = null; this.auxReady = null;
     if (this.auxPlayer) {
+      applyDeckTone?.(this.auxPlayer.id, FLAT_TONE);
       try { this.auxPlayer.pause(); } catch { /* Ignore */ }
       try { this.auxPlayer.release(); } catch { /* Ignore */ }
       try { this.auxPlayer.remove(); } catch { /* Ignore */ }

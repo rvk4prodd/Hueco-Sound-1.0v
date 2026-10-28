@@ -11,9 +11,10 @@ import org.junit.Test
 
 @UnstableApi
 class HuecoDspTest {
-  private fun render(config: Map<String, Any?>, frames: Int = 24000, signal: (Int, Int) -> Int): IntArray {
+  private fun render(config: Map<String, Any?>, frames: Int = 24000, tone: HuecoDsp.DeckTone = HuecoDsp.DeckTone(), signal: (Int, Int) -> Int): IntArray {
     HuecoDsp.update(config)
     val processor = HuecoAudioProcessor()
+    processor.mixTone = tone
     processor.configure(AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)); processor.flush()
     val input = ByteBuffer.allocateDirect(frames * 4).order(ByteOrder.LITTLE_ENDIAN)
     repeat(frames) { frame -> repeat(2) { ch -> input.putShort(signal(frame, ch).toShort()) } }; input.flip()
@@ -50,5 +51,20 @@ class HuecoDspTest {
     assertEquals(0.0, HuecoDsp.settings.eq[0], 0.0); assertEquals(1.0, HuecoDsp.settings.width, 0.0)
     HuecoDsp.update(mapOf("speed" to 1.0, "pitch" to 12.0, "linked" to false))
     assertEquals(2f, HuecoDsp.pitch, .0001f)
+  }
+  @Test fun deckAutomationDoesNotModifyTheOtherPlayer() {
+    val a = HuecoAudioProcessor(); val b = HuecoAudioProcessor()
+    HuecoDsp.register("test-out", a); HuecoDsp.register("test-in", b)
+    HuecoDsp.updateDeck("test-out", mapOf("bassDb" to -18.0, "lowpass" to 600.0))
+    assertEquals(-18.0, a.mixTone.bassDb, 0.0); assertEquals(0.0, b.mixTone.bassDb, 0.0)
+    HuecoDsp.unregister("test-out"); HuecoDsp.unregister("test-in")
+  }
+  @Test fun transitionFiltersAndBassCutChangeActualPcm() {
+    fun power(samples: IntArray) = samples.drop(12000).sumOf { it.toDouble() * it }
+    val bass: (Int, Int) -> Int = { frame, _ -> (6000 * sin(2 * PI * 60 * frame / 48000)).toInt() }
+    val highs: (Int, Int) -> Int = { frame, _ -> (6000 * sin(2 * PI * 8000 * frame / 48000)).toInt() }
+    assertTrue(power(render(emptyMap(), tone = HuecoDsp.DeckTone(bassDb = -18.0), signal = bass)) < power(render(emptyMap(), signal = bass)) * .1)
+    assertTrue(power(render(emptyMap(), tone = HuecoDsp.DeckTone(highpass = 2000.0), signal = bass)) < power(render(emptyMap(), signal = bass)) * .1)
+    assertTrue(power(render(emptyMap(), tone = HuecoDsp.DeckTone(lowpass = 600.0), signal = highs)) < power(render(emptyMap(), signal = highs)) * .1)
   }
 }
