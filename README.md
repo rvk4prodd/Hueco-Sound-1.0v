@@ -16,7 +16,11 @@ Para reenviar uma build após corrigir a instalação: `npx eas-cli@latest build
 
 ## Identidade e transições
 
-Logo e sprites fornecidos pelo usuário, rosto do personagem no ícone e paleta turquesa sobre fundo escuro. Configurações → Transições permite troca direta ou fade de 1, 2, 3, 5 ou 8 segundos, com curva linear ou suave. O fade usa um único player: reduz o volume ao final da faixa e aumenta na entrada da seguinte; não é crossfade com sobreposição. No pulo manual, a nova faixa entra com o fade selecionado.
+Logo e sprites fornecidos pelo usuário, rosto do personagem no ícone e paleta turquesa sobre fundo escuro. Configurações → Transições controla o fade geral e as animações. Para sobrepor duas faixas, abra o mixer da playlist e ative Misturar músicas.
+
+No mixer, escolha Auto, Fade, Rise, Blend ou Corte. Para personalizar, arraste os pontos azuis de volume, escolha EQ e efeitos nos controles abaixo do gráfico e ajuste a intensidade. A aba Por transição guarda ajustes para um par; Playlist inteira define o padrão. Os pontos de entrada e saída mostram segundos e décimos. Salve ao concluir. A prévia pausa a reprodução atual e usa a mesma automação da transição ao vivo.
+
+As duas formas de onda são calculadas do áudio disponível, podendo exigir preparar ou baixar a faixa. Se a análise falhar, o editor informa e mantém as curvas editáveis. O BPM é manual, em 4/4; os botões de compassos convertem esse valor em segundos, sem detectar batidas ou sincronizar automaticamente o andamento. A duração efetiva respeita o tamanho das faixas. O DSP independente de cada player e a análise nativa exigem o APK 1.3.6 ou posterior.
 
 As animações de capas e telas oferecem deslizar, dissolver, zoom ou nenhuma. A opção reduzir movimento continua disponível. Vidro/desfoque, ondas decorativas e personagens podem ser desativados separadamente. As ondas indicam reprodução, sem medir o espectro do áudio; param quando a música pausa ou o player fica fechado. Termos, privacidade, créditos a ZhyrSnow/Liner e texto integral das licenças estão em Configurações → Sobre, créditos e termos.
 
