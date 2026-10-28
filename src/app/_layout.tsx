@@ -18,6 +18,8 @@ import type { TabType } from '../types';
 import { useExperienceStore } from '../preferences/experience';
 import { audioManager } from '../player/audioManager';
 import { useAudioFXStore } from '../preferences/audioFX';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { addLog, persistLogs, restoreLogs } from '../diagnostics/logs';
 
 const PRESET_GRADIENTS: Record<string, [string, string, ...string[]]> = {
   neon: ['#120726', '#25083f', '#071523'],
@@ -28,6 +30,18 @@ const PRESET_GRADIENTS: Record<string, [string, string, ...string[]]> = {
 };
 
 export default function RootLayout() {
+  useEffect(() => {
+    let disposed = false;
+    let detach: (() => void) | undefined;
+    void AsyncStorage.getItem('@hueco_logs_v1').then(saved => {
+      if (disposed) return;
+      restoreLogs(saved);
+      let writes = Promise.resolve();
+      detach = persistLogs(text => { writes = writes.then(() => AsyncStorage.setItem('@hueco_logs_v1', text)).catch(() => {}); });
+      addLog('info', 'aplicativo', 'Hueco Sound iniciado.');
+    }).catch(() => { if (!disposed) addLog('warn', 'logs', 'Não foi possível recuperar os registros anteriores.'); });
+    return () => { disposed = true; detach?.(); };
+  }, []);
   const path = usePathname(), hydrated = usePlayerStore((s) => s.hydrated), reducedMotion = usePlayerStore((s) => s.reducedMotion);
   const transition = useExperienceStore(s => s.audioTransition), seconds = useExperienceStore(s => s.transitionSeconds), curve = useExperienceStore(s => s.fadeCurve), motion = useExperienceStore(s => s.visualTransition);
   const wallpaperPreset = useExperienceStore(s => s.wallpaperPreset);
@@ -101,6 +115,7 @@ export default function RootLayout() {
               <Stack.Screen name="library" />
               <Stack.Screen name="playlist/[id]" />
               <Stack.Screen name="settings" />
+              <Stack.Screen name="logs" />
               <Stack.Screen name="about" />
               <Stack.Screen name="collection" />
               <Stack.Screen name="+not-found" />

@@ -1,6 +1,6 @@
 # Hueco Sound 1.2.0
 
-Aplicativo React Native / Expo SDK 58 para Android. Identidade do projeto: ZhyrSnow. Adaptação pessoal baseada no Liner; consulte a licença original em `src/legal/LINER-LICENSE.txt` e os créditos dentro do aplicativo.
+Aplicativo React Native / Expo SDK 58 para Android. Identidade do projeto: ZhyrSnow. Adaptação pessoal baseada no Liner; consulte a licença original em `src/legal/notices.ts (originalProjectLicense)` e os créditos dentro do aplicativo.
 
 ## Instalação e build reproduzíveis
 
@@ -56,3 +56,7 @@ O arquivo de licença original do Liner é source-available e contém restriçõ
 ## Arquivos visuais
 
 `assets/branding/hueco-logo.png`, `hueco-face-original.png` e `hueco-sprites.png` preservam os originais enviados. `hueco-icon.png` foi preparado com a ferramenta integrada imagegen. Prompt: adaptar o retrato para um ícone Android quadrado, preservando rosto, chapéu, óculos, traço e cores, sem texto ou bordas. Os personagens são recortados apenas na apresentação do app, sem duplicar a folha de sprites.
+
+## Logs locais
+
+Abra Configurações → Logs do aplicativo para acompanhar erros, filtrar registros, buscar, compartilhar e limpar o histórico. Os últimos 300 registros são guardados no aparelho; URLs, emails, caminhos e credenciais são ocultados antes de armazenar. O histórico de logs não é enviado automaticamente. O arquivo compartilhado identifica a versão do aplicativo.

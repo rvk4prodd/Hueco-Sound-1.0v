@@ -12,6 +12,7 @@ import { useExperienceStore } from "../preferences/experience";
 import { useAudioFXStore } from "../preferences/audioFX";
 import { mixPoints } from './mixSettings';
 import { tracePlayback } from './playbackTrace';
+import { addLog } from '../diagnostics/logs';
 
 export interface PlayerState {
   currentTrack: Track | null;
@@ -438,6 +439,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     } catch (error) {
       if (requestVersion !== version) return;
       desiredPlaying = false;
+      addLog('error', 'reprodução', error);
       audioManager.stop();
       update({ error: message(error), isLoading: false, isPlaying: false });
     }

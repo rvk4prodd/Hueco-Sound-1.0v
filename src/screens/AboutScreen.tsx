@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import Constants from 'expo-constants';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { HuecoLogo, CharacterSprite } from '../components/HuecoBrand';
 import { GlassCard } from '../components/GlassCard';
 import { Chip, IconButton, screenStyles as base } from './ScreenParts';
-import { huecoSoundLicense, expoLicense } from '../legal/notices';
+import { huecoSoundLicense, expoLicense, originalProjectLicense } from '../legal/notices';
 import { dependencyNotices } from '../legal/dependencies';
 import { colors } from '../theme';
 
@@ -37,7 +38,7 @@ export function AboutScreen() {
 
         <View style={s.brand}>
           <HuecoLogo width={280} />
-          <Text style={s.version}>Versão 1.3.1 · Edição Mobile Oficial</Text>
+          <Text style={s.version}>Versão {Constants.expoConfig?.version ?? '—'} · Android</Text>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={base.chips}>
@@ -70,6 +71,7 @@ export function AboutScreen() {
           <View style={s.card}>
             <Text style={s.title}>Hueco Sound · Licença</Text>
             <Text selectable style={s.license}>{huecoSoundLicense}</Text>
+            <Text style={s.title}>Projeto de origem · créditos e licença</Text><Text selectable style={s.license}>{originalProjectLicense}</Text>
             <Text style={s.title}>Template Expo · MIT</Text>
             <Text selectable style={s.license}>{expoLicense}</Text>
             <Text style={s.title}>Bibliotecas do aplicativo</Text>
