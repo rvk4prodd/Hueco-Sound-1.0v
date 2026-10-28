@@ -54,15 +54,17 @@ jobs:
       - name: Prebuild Native Android Code
         run: npx expo prebuild --platform android --clean
 
+      - name: Verify native audio effects
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :expo-audio:testDebugUnitTest --tests expo.modules.audio.HuecoDspTest --no-daemon
+
       - name: Build Standalone Release APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
-
-      - name: Verify native audio effects
-        working-directory: android
-        run: ./gradlew :expo-audio:testReleaseUnitTest --tests expo.modules.audio.HuecoDspTest --no-daemon
 
       - name: Prepare APK File
         run: |
