@@ -1,6 +1,10 @@
-# Hueco Sound 1.2.0
+# Hueco Sound
 
 Aplicativo React Native / Expo SDK 58 para Android. Identidade do projeto: ZhyrSnow. Adaptação pessoal baseada no Liner; consulte a licença original em `src/legal/notices.ts (originalProjectLicense)` e os créditos dentro do aplicativo.
+
+- [Documentação do PC](docs/desktop.md)
+- [Suporte do Hueco Sound](https://github.com/rvk4prodd/Hueco-Sound-1.0v/issues)
+- [Versões publicadas](https://github.com/rvk4prodd/Hueco-Sound-1.0v/releases)
 
 ## Instalação e build reproduzíveis
 
