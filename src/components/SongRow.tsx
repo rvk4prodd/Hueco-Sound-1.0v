@@ -1,13 +1,14 @@
 import React, { memo } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Track } from '../types';
 import { usePlayerStore } from '../player/usePlayerStore';
 import { useUIStore } from '../ui/useUIStore';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 import { Cover } from './Cover';
 interface Props { track: Track; onPress?: () => void; playlistId?: string; index?: number; rightAccessory?: React.ReactNode; onMore?: () => void; }
 export const SongRow = memo(function SongRow({ track, onPress, playlistId, rightAccessory, onMore }: Props) {
+ useHuecoTheme();
  const isCurrent = usePlayerStore((s) => s.currentTrack?.id === track.id);
  const playing = usePlayerStore((s) => s.currentTrack?.id === track.id && s.isPlaying);
  const liked = usePlayerStore((s) => s.likedTrackIds.includes(track.id));
@@ -25,4 +26,4 @@ export const SongRow = memo(function SongRow({ track, onPress, playlistId, right
  <Pressable accessibilityRole="button" accessibilityLabel={`Opções de ${track.title}`} onPress={onMore ?? (() => actions(track, playlistId))} style={styles.button}><Ionicons name="ellipsis-vertical" size={20} color={colors.muted} /></Pressable>
  </View>;
 });
-const styles = StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'center', minHeight: 72, paddingHorizontal: 16 }, current: { backgroundColor: '#64f4d410', borderLeftWidth: 2, borderLeftColor: colors.accent }, main: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, paddingVertical: 10 }, info: { flex: 1, marginLeft: 12 }, title: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 5 }, subtitle: { flexDirection: 'row', alignItems: 'center', gap: 5 }, artist: { color: colors.muted, fontSize: 12, flexShrink: 1 }, explicit: { fontSize: 8, color: colors.background, backgroundColor: colors.muted, borderRadius: 2, paddingHorizontal: 3, paddingVertical: 1 }, button: { minHeight: 44, width: 40, justifyContent: 'center', alignItems: 'center' } });
+const styles = themedStyles(() => ({ row: { flexDirection: 'row', alignItems: 'center', minHeight: 72, paddingHorizontal: 16 }, current: { backgroundColor: '#64f4d410', borderLeftWidth: 2, borderLeftColor: colors.accent }, main: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, paddingVertical: 10 }, info: { flex: 1, marginLeft: 12 }, title: { color: colors.text, fontSize: 15, fontWeight: '600', marginBottom: 5 }, subtitle: { flexDirection: 'row', alignItems: 'center', gap: 5 }, artist: { color: colors.muted, fontSize: 12, flexShrink: 1 }, explicit: { fontSize: 8, color: colors.background, backgroundColor: colors.muted, borderRadius: 2, paddingHorizontal: 3, paddingVertical: 1 }, button: { minHeight: 44, width: 40, justifyContent: 'center', alignItems: 'center' } }));

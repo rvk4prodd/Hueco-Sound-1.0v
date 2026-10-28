@@ -3,14 +3,13 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Switch,
   Text,
   View,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 import { EQ_PRESETS, useAudioFXStore } from '../preferences/audioFX';
 import { GlassCard } from './GlassCard';
 
@@ -20,6 +19,7 @@ interface Props {
 }
 
 export function AudioFXRackModal({ visible, onClose }: Props) {
+ useHuecoTheme();
   const audioFX = useAudioFXStore((s) => s.audioFX);
   const setAudioFXEnabled = useAudioFXStore((s) => s.setAudioFXEnabled);
   const setEQPreset = useAudioFXStore((s) => s.setEQPreset);
@@ -194,7 +194,7 @@ export function AudioFXRackModal({ visible, onClose }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   container: { flex: 1, backgroundColor: '#070c12' },
   header: {
     flexDirection: 'row',
@@ -244,4 +244,4 @@ const s = StyleSheet.create({
   bandFreq: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   paramLabel: { color: colors.text, fontSize: 12 },
   paramValue: { color: colors.accent, fontSize: 12, fontWeight: '700' },
-});
+}));

@@ -32,6 +32,21 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.*
+!.env.example
+credentials.json
+*.keystore
+*.log
+*.apk
+*.aab
+/output/
+/release/
+/capture*.cjs
+/inspect*.cjs
+/debug*.cjs
+/verify*.cjs
+*.hprof
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +54,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local handoff and review notes
+/CONTINUAR-NO-ANTIGRAVITY.md
+/REVISAO-*.md

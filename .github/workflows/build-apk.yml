@@ -25,10 +25,10 @@ jobs:
         with:
           version: 10.28.2
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'pnpm'
 
       - name: Setup Java JDK 17
@@ -45,24 +45,24 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate TypeScript, lint and regression tests
+        run: pnpm check
+
+      - name: Check Expo dependency compatibility
+        run: pnpm exec expo install --check
+
       - name: Prebuild Native Android Code
         run: npx expo prebuild --platform android --clean
-
-      - name: Bundle JavaScript & Assets for Standalone Release
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx expo export:embed \
-            --platform android \
-            --dev false \
-            --entry-file index.ts \
-            --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res
 
       - name: Build Standalone Release APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --build-cache --parallel --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+
+      - name: Verify native audio effects
+        working-directory: android
+        run: ./gradlew :expo-audio:testReleaseUnitTest --tests expo.modules.audio.HuecoDspTest --no-daemon
 
       - name: Prepare APK File
         run: |
@@ -90,20 +90,11 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           files: output/HuecoSound.apk
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v1.3.1-build-{0}', github.run_number) }}
-          name: Hueco Sound v1.3.1 (Build #${{ github.run_number }})
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v1.3.2-build-{0}', github.run_number) }}
+          name: Hueco Sound v1.3.2 (Build #${{ github.run_number }})
           body: |
-            ### 🎵 Hueco Sound APK v1.3.1 - Download Direto
-
-            - **Versão:** 1.3.1 (Release Standalone)
-            - **Build:** #${{ github.run_number }}
-            - **Novidades desta grande atualização:**
-              - **Estúdio de Mixagem Estilo Spotify Completo em Mobile:** Formas de onda com frequências coloridas, o quadradinho arrastável dinâmico com segundos exatos em tempo real. A música de saída (A) inicia no final dela (arraste para a esquerda para voltar no tempo), e a de entrada (B) inicia no início dela (arraste para a direita para avançar). Ajuste fino por botões `−` e `+`.
-              - **Pontes de Transição nas Playlists:** Link interativo entre cada música da playlist (`[ 4s • AUTOMIX Mix ]`) abrindo diretamente o editor de transição entre as duas faixas.
-              - **Notificação Nativa Samsung One UI & Suporte a Fones Bluetooth:**
-                - Integração com Media3 `MediaSessionService` e `MediaStyle` nativa do Android para o reprodutor Samsung One UI na central de notificações e tela de bloqueio.
-                - Suporte a comandos de fone de ouvido Bluetooth (AVRCP): passar música, voltar música, pausar e retomar.
-                - Permissões completas de `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` e Bluetooth.
-              - **Gapless Nativo & Downloads Offline:** Reprodução 100% contínua e download completo de playlists para ouvir em qualquer lugar sem internet.
+            Hueco Sound 1.3.2 — correções de reprodução, transições, efeitos Android e temas.
+            Instalador gerado a partir do commit ${{ github.sha }}.
+            Confirme reprodução, notificações e Bluetooth no seu aparelho.
           draft: false
           prerelease: false

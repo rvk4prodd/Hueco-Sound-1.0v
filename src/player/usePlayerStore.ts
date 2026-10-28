@@ -216,6 +216,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     const state = get();
     const currentTrack = state.currentTrack;
     if (!currentTrack || currentTrack.id !== status.trackId) return;
+    if (state.repeatMode === 'one' || state.sleepAtEndOfTrack || useAudioFXStore.getState().abLoop.enabled) return;
     const nextTrack = upcoming()[0];
     if (!nextTrack || nextTrack.id === currentTrack.id) return;
 
@@ -257,10 +258,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       void (async () => {
         try {
           const url = await streamFor(nextTrack);
-          if (requestVersion !== version) return;
-          await audioManager.prepareAuxTrack(nextTrack, url, inCueSec);
+          if (requestVersion !== version || upcoming()[0]?.id !== nextTrack.id) return;
+          const prepared = await audioManager.prepareAuxTrack(nextTrack, url, inCueSec);
+          if (!prepared && auxPreparingTrackId === nextTrack.id) auxPreparingTrackId = null;
         } catch {
-          auxPreparingTrackId = null;
+          if (auxPreparingTrackId === nextTrack.id) auxPreparingTrackId = null;
         }
       })();
     }
@@ -274,7 +276,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           void startPlayback(nextTrack, undefined, false, false, inCueSec * 1000);
           return;
         }
-        selectTrack(nextTrack, version);
+        if (get().currentTrack?.id !== nextTrack.id) selectTrack(nextTrack, version);
         syncUpcoming();
       });
     }

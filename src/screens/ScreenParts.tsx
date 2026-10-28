@@ -1,15 +1,17 @@
 import React, { useRef } from 'react';
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export function IconButton({ name, label, onPress, color = colors.text, disabled = false }: { name: IconName; label: string; onPress: () => void; color?: string; disabled?: boolean }) {
+  useHuecoTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.iconButton, { opacity: disabled ? .25 : pressed ? .55 : 1 }]}><Ionicons name={name} size={23} color={color} /></Pressable>;
 }
 
 export function Cover({ uri, size = 64, icon = 'musical-notes', color = '#364333', round = false }: { uri?: string; size?: number; icon?: IconName; color?: string; round?: boolean }) {
+ useHuecoTheme();
   const [failedUri, setFailedUri] = React.useState<string | undefined>();
   return <View style={{ width: size, height: size, borderRadius: round ? size / 2 : 10, backgroundColor: color, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
     {uri && uri !== failedUri ? <Image accessibilityIgnoresInvertColors source={{ uri }} onError={() => setFailedUri(uri)} style={{ width: size, height: size }} /> : <Ionicons name={icon} size={size * .36} color={colors.text} />}
@@ -17,20 +19,24 @@ export function Cover({ uri, size = 64, icon = 'musical-notes', color = '#364333
 }
 
 export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress: () => void }) {
+  useHuecoTheme();
   return <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} onPress={onPress} style={({ pressed }) => [s.chip, active && s.activeChip, pressed && { opacity: .7 }]}><Text style={[s.chipText, active && { color: '#101710' }]}>{label}</Text></Pressable>;
 }
 
 export function ActionButton({ label, onPress, icon, secondary, disabled }: { label: string; onPress: () => void; icon?: IconName; secondary?: boolean; disabled?: boolean }) {
+  useHuecoTheme();
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.actionButton, secondary && { backgroundColor: colors.elevated }, { opacity: disabled ? .4 : pressed ? .7 : 1 }]}>
     {icon && <Ionicons name={icon} size={19} color={secondary ? colors.text : '#101710'} />}<Text style={[s.actionText, secondary && { color: colors.text }]}>{label}</Text>
   </Pressable>;
 }
 
 export function EmptyState({ title, description, icon = 'musical-notes-outline', action, onAction, loading }: { title: string; description?: string; icon?: IconName; action?: string; onAction?: () => void; loading?: boolean }) {
+  useHuecoTheme();
   return <View style={s.empty}>{loading ? <ActivityIndicator color={colors.accent} size="large" /> : <View style={s.emptyIcon}><Ionicons name={icon} size={32} color={colors.accent} /></View>}<Text style={s.emptyTitle}>{title}</Text>{description && <Text style={s.emptyDescription}>{description}</Text>}{action && onAction && <ActionButton label={action} onPress={onAction} />}</View>;
 }
 
 export function NameDialog({ visible, title, initialValue = '', onClose, onSave }: { visible: boolean; title: string; initialValue?: string; onClose: () => void; onSave: (name: string) => void }) {
+  useHuecoTheme();
   const [value, setValue] = React.useState(initialValue);
   const input = useRef<React.ComponentRef<typeof TextInput>>(null);
   const submit = () => { if (value.trim()) onSave(value.trim()); };
@@ -43,10 +49,11 @@ export function NameDialog({ visible, title, initialValue = '', onClose, onSave 
 }
 
 export function ConfirmDialog({ visible, title, description, confirmLabel = 'Excluir', onClose, onConfirm }: { visible: boolean; title: string; description: string; confirmLabel?: string; onClose: () => void; onConfirm: () => void }) {
+  useHuecoTheme();
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={s.modal}><Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Cancelar" onPress={onClose} /><View accessibilityViewIsModal style={s.dialog}><Text style={s.dialogTitle}>{title}</Text><Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>{description}</Text><View style={s.dialogActions}><ActionButton secondary label="Cancelar" onPress={onClose} /><ActionButton label={confirmLabel} onPress={onConfirm} /></View></View></View></Modal>;
 }
 
-export const screenStyles = StyleSheet.create({
+export const screenStyles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: 'transparent' },
   content: { paddingBottom: 24 },
   header: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -59,9 +66,8 @@ export const screenStyles = StyleSheet.create({
   input: { color: colors.text, flex: 1, fontSize: 15, height: 52, paddingVertical: 0 },
   chips: { flexDirection: 'row', paddingHorizontal: 20, gap: 8, paddingBottom: 14 },
   link: { color: colors.muted, fontSize: 12, fontWeight: '700' },
-});
-
-const s = StyleSheet.create({
+}));
+const s = themedStyles(() => ({
   iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   chip: { borderRadius: 24, paddingHorizontal: 17, minHeight: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   activeChip: { backgroundColor: colors.accent },
@@ -77,4 +83,4 @@ const s = StyleSheet.create({
   dialogTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 22 },
   nameInput: { height: 54, borderRadius: 12, paddingHorizontal: 15, fontSize: 17, color: colors.text, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
   dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 24 },
-});
+}));

@@ -18,7 +18,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayerStore } from '../player/usePlayerStore';
 import { useUIStore } from '../ui/useUIStore';
-import { colors, coverColor } from '../theme';
+import { colors, coverColor, themedStyles, useHuecoTheme } from '../theme';
 import type { LyricLine } from '../types';
 import { Cover } from './Cover';
 import { SongRow } from './SongRow';
@@ -356,6 +356,7 @@ function QueueView() {
 }
 
 export function FullscreenPlayer() {
+ useHuecoTheme();
   const glass = useExperienceStore(s => s.glassEnabled);
   const motion = useExperienceStore(s => s.visualTransition);
   const customWallpaperUri = useExperienceStore(s => s.customWallpaperUri);
@@ -392,6 +393,7 @@ export function FullscreenPlayer() {
   const [showSlowedReverb, setShowSlowedReverb] = useState(false);
   const [showLyricsFX, setShowLyricsFX] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showTools, setShowTools] = useState(false);
 
   // Gesture handling refs
   const touchStartX = useRef(0);
@@ -572,7 +574,11 @@ export function FullscreenPlayer() {
               <PlaybackControls />
               <PlaybackWaves active={open && page === 'music'} />
 
-              {/* Feature 10 & 11: DJ Hot Cues + AB Loop */}
+              <Pressable accessibilityRole="button" accessibilityState={{ expanded: showTools }} onPress={() => setShowTools(!showTools)} style={[styles.chip, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }]}>
+                <Text style={styles.chipText}>Ferramentas de áudio</Text>
+                <Ionicons name={showTools ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+              </Pressable>
+              {showTools && <View>
               <DJToolsBar />
 
               {/* Studio Quick Action Pills */}
@@ -582,30 +588,31 @@ export function FullscreenPlayer() {
                   style={styles.studioPill}
                   onPress={() => setShowAudioFX(true)}
                 >
-                  <Text style={styles.studioPillText}>🎚️ FX Rack</Text>
+                  <Text style={styles.studioPillText}>Equalizador</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   style={styles.studioPill}
                   onPress={() => setShowSlowedReverb(true)}
                 >
-                  <Text style={styles.studioPillText}>🌊 Slowed</Text>
+                  <Text style={styles.studioPillText}>Velocidade e reverb</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   style={styles.studioPill}
                   onPress={() => setShowLyricsFX(true)}
                 >
-                  <Text style={styles.studioPillText}>✨ Letras FX</Text>
+                  <Text style={styles.studioPillText}>Estilo das letras</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   style={styles.studioPill}
                   onPress={() => setShowStats(true)}
                 >
-                  <Text style={styles.studioPillText}>📊 Stats</Text>
+                  <Text style={styles.studioPillText}>Estatísticas</Text>
                 </Pressable>
               </View>
+              </View>}
 
               {/* Bottom Utility Bar */}
               <View style={styles.utility}>
@@ -727,7 +734,7 @@ export function FullscreenPlayer() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   container: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -888,4 +895,4 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginTop: 4,
   },
-});
+}));

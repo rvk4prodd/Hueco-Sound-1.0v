@@ -5,6 +5,7 @@ import { Track } from "../types";
 import { originalPlaybackSource, retainPreparedSources } from "./prepareSource";
 import { calculateCrossfadeFactors, CrossfadeCurve, transitionGain } from './transitions';
 import type { AudioTransition, FadeCurve } from '../preferences/experience';
+import { applyNativeEffects, type NativeEffectsConfig } from './nativeEffects';
 
 export interface PlaybackStatus {
   trackId: string;
@@ -55,10 +56,17 @@ export class AudioManager {
 
   // Crossfading state
   private isCrossfading = false;
+  private mixVersion = 0;
   private crossfadeTimer: ReturnType<typeof setInterval> | null = null;
+  private crossfadeSubscription: Subscription | null = null;
   private crossfadeWatchdog: ReturnType<typeof setTimeout> | null = null;
   private preparedAuxTrackId: string | null = null;
   private preparedAuxInCue = 0;
+  private auxVersion = 0;
+  private auxReady: Promise<boolean> | null = null;
+  private cancelAuxReady: (() => void) | null = null;
+  private handoverPending = false;
+  private paused = false;
   private lastTime = 0;
   private lastDuration = 0;
 
@@ -68,6 +76,7 @@ export class AudioManager {
   private fadeCurve: FadeCurve = 'smooth';
   private normalizationFactor = 1.0;
   private reverbLevel = 0;
+  private studio: NativeEffectsConfig | null = null;
 
   init(): Promise<void> {
     if (!this.modePromise) {
@@ -104,7 +113,9 @@ export class AudioManager {
     this.retainSources();
     this.reportedTrackId = track.id;
     this.options = options;
+    this.paused = false;
     player.playbackRate = options.playbackRate;
+    if (this.studio) applyNativeEffects(this.studio);
     this.lastTime = 0;
     this.lastDuration = 0;
     this.applyVolume();
@@ -120,8 +131,10 @@ export class AudioManager {
           this.preparedResolve?.(!error);
         }
 
-        const effectiveIndex = status.currentIndex >= 0 ? status.currentIndex : 0;
-        const playingTrack = this.tracks[effectiveIndex] || this.tracks[0];
+        // Native transitions briefly report -1; never attribute them to the first song.
+        if (status.currentIndex < 0) return;
+        const effectiveIndex = status.currentIndex;
+        const playingTrack = this.tracks[effectiveIndex];
         if (!playingTrack) {
           if (error) {
             onStatusUpdate({
@@ -138,6 +151,13 @@ export class AudioManager {
         this.lastDuration = status.duration > 0 ? status.duration : (playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0);
         this.applyVolume();
 
+        if (this.isCrossfading && !this.handoverPending && status.isLoaded && !status.isBuffering && !status.didJustFinish && status.currentTime < status.duration - .6) {
+          // The notification/headset controls the primary MediaSession. Mirror it to the other deck.
+          if (!status.playing && !this.paused) { this.paused = true; this.auxPlayer?.pause(); }
+          else if (status.playing && this.paused) { this.paused = false; this.auxPlayer?.play(); }
+        }
+        if (this.isCrossfading && playingTrack.id !== this.reportedTrackId) return;
+
         onStatusUpdate({
           ...status,
           trackId: playingTrack.id,
@@ -149,6 +169,7 @@ export class AudioManager {
         if (this.player !== player || version !== this.version) return;
         const playingTrack = this.tracks[currentIndex];
         if (!playingTrack || playingTrack.id === this.reportedTrackId) return;
+        if (this.isCrossfading) return;
         this.reportedTrackId = playingTrack.id;
         this.lastTime = 0;
         this.lastDuration = playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0;
@@ -162,7 +183,7 @@ export class AudioManager {
     this.activateMetadata(track);
 
     const prepared = new Promise<boolean>((resolve) => { this.preparedResolve = resolve; });
-    const timeout = setTimeout(() => this.preparedResolve?.(false), 6_000);
+    const timeout = setTimeout(() => this.preparedResolve?.(false), 20_000);
     try {
       player.play();
       const loaded = player.isLoaded || await prepared;
@@ -206,8 +227,9 @@ export class AudioManager {
    */
   async setUpcoming(tracks: Track[], resolve: (track: Track) => Promise<string>): Promise<void> {
     const player = this.player;
-    if (!player) return;
+    if (!player || this.isCrossfading) return;
     const version = ++this.upcomingVersion;
+    if (player.currentIndex < 0) return;
     const current = Math.max(0, player.currentIndex);
     const desired = tracks.slice(0, 2);
     const existing = this.tracks.slice(current + 1);
@@ -226,9 +248,11 @@ export class AudioManager {
       try {
         const url = await resolve(track);
         if (this.player !== player || this.upcomingVersion !== version) return;
-        player.add({ uri: url });
+        // Register JS identity before native add emits synchronous status events.
         this.tracks.push(track);
         this.urls.push(url);
+        try { player.add({ uri: url }); }
+        catch (error) { this.tracks.pop(); this.urls.pop(); throw error; }
         this.retainSources();
       } catch {
         return;
@@ -240,8 +264,8 @@ export class AudioManager {
    * Pre-loads the auxiliary deck with Track B's stream URL at the designated in-cue point.
    */
   async prepareAuxTrack(track: Track, url: string, inCueSec = 0): Promise<boolean> {
-    if (this.preparedAuxTrackId === track.id && this.auxPlayer) {
-      return true;
+    if (this.preparedAuxTrackId === track.id && this.auxPlayer && this.preparedAuxInCue === inCueSec) {
+      return this.auxReady || this.auxPlayer.isLoaded;
     }
     this.cleanupAuxPlayer();
 
@@ -251,10 +275,33 @@ export class AudioManager {
       this.preparedAuxTrackId = track.id;
       this.preparedAuxInCue = inCueSec;
       aux.volume = 0;
-      if (inCueSec > 0) {
-        await aux.seekTo(inCueSec);
-      }
-      return true;
+      aux.playbackRate = this.options?.playbackRate || 1;
+      if (this.studio) applyNativeEffects(this.studio);
+      const generation = this.auxVersion;
+      this.auxReady = new Promise<boolean>(resolve => {
+        let done = false;
+        let listener: Subscription | undefined;
+        const finish = (loaded: boolean) => {
+          if (done) return;
+          done = true; clearTimeout(timeout); listener?.remove();
+          this.cancelAuxReady = null; resolve(loaded);
+        };
+        const timeout = setTimeout(() => finish(false), 8_000);
+        this.cancelAuxReady = () => finish(false);
+        listener = aux.addListener('playbackStatusUpdate', status => {
+          if (this.auxPlayer !== aux || generation !== this.auxVersion) { finish(false); return; }
+          if ((status as { error?: unknown }).error) finish(false);
+          else if (status.isLoaded) finish(true);
+        });
+        if (aux.isLoaded) finish(true);
+      }).then(async loaded => {
+        if (!loaded || this.auxPlayer !== aux || generation !== this.auxVersion) return false;
+        if (inCueSec > 0) await aux.seekTo(inCueSec);
+        return this.auxPlayer === aux && generation === this.auxVersion;
+      }).catch(() => false);
+      const ready = await this.auxReady;
+      if (!ready && this.auxPlayer === aux && generation === this.auxVersion) this.cleanupAuxPlayer();
+      return ready;
     } catch {
       this.cleanupAuxPlayer();
       return false;
@@ -274,12 +321,14 @@ export class AudioManager {
   ): Promise<void> {
     const player = this.player;
     if (!player || this.isCrossfading) return;
+    const version = this.version;
+    this.isCrossfading = true;
+    const mixVersion = ++this.mixVersion;
 
-    const masterVolume = this.options?.volume ?? 1;
     const effectiveSec = Math.max(1, Math.min(16, durationSec));
 
     // Ensure auxPlayer is ready
-    if (!this.auxPlayer || this.preparedAuxTrackId !== nextTrack.id) {
+    if (!this.auxPlayer || this.preparedAuxTrackId !== nextTrack.id || this.preparedAuxInCue !== inCueSec) {
       // Find in existing urls or fallback
       const trackIndex = this.tracks.findIndex(t => t.id === nextTrack.id);
       const url = trackIndex >= 0 ? this.urls[trackIndex] : null;
@@ -289,47 +338,51 @@ export class AudioManager {
     }
 
     const aux = this.auxPlayer;
-    if (!aux) {
-      // If aux deck is unavailable, fallback to skipToTrack
-      this.skipToTrack(nextTrack.id);
-      onHandover();
+    const ready = aux && await this.auxReady;
+    if (version !== this.version || mixVersion !== this.mixVersion || !this.isCrossfading) return;
+    if (!aux || !ready || !aux.isLoaded || aux !== this.auxPlayer || this.preparedAuxTrackId !== nextTrack.id) {
+      this.abortCrossfade();
+      onHandover(false);
       return;
     }
 
-    this.isCrossfading = true;
-    const startTime = Date.now();
+    const startPosition = aux.currentTime;
     const totalMs = effectiveSec * 1000;
 
     try {
       aux.volume = 0;
-      aux.play();
+      if (!this.paused) aux.play();
     } catch {
       this.abortCrossfade();
-      this.skipToTrack(nextTrack.id);
-      onHandover();
+      onHandover(false);
       return;
     }
 
-    // Safety watchdog to prevent hanging if an audio stream stalls
-    this.crossfadeWatchdog = setTimeout(() => {
-      if (this.isCrossfading) {
-        this.finalizeCrossfade(nextTrack, inCueSec + effectiveSec, onHandover);
-      }
-    }, totalMs + 4000);
+    let lastPosition = startPosition, stalledMs = 0, lastTick = Date.now();
 
     // High frequency volume interpolation loop
-    this.crossfadeTimer = setInterval(() => {
+    const tick = () => {
+      if (version !== this.version || mixVersion !== this.mixVersion || aux !== this.auxPlayer) return;
       if (!this.isCrossfading || !this.player || !this.auxPlayer) {
         if (this.crossfadeTimer) clearInterval(this.crossfadeTimer);
         this.crossfadeTimer = null;
         return;
       }
+      const now = Date.now(), elapsedTick = Math.max(0, now - lastTick);
+      lastTick = now;
+      if (this.paused || this.handoverPending) return;
+      stalledMs = aux.currentTime > lastPosition + .001 ? 0 : stalledMs + elapsedTick;
+      lastPosition = aux.currentTime;
+      if (stalledMs > 8_000) { this.abortCrossfade(); onHandover(false); return; }
+      if (!aux.isLoaded) return;
 
-      const elapsed = Date.now() - startTime;
+      // Advance with audio, not wall time: pause and buffering must freeze the mix.
+      const elapsed = Math.max(0, aux.currentTime - startPosition) * 1000;
       const progress = Math.min(1, Math.max(0, elapsed / totalMs));
       const { outFactor, inFactor } = calculateCrossfadeFactors(progress, curve);
 
       try {
+        const masterVolume = (this.options?.volume ?? 1) * this.normalizationFactor;
         this.player.volume = Math.max(0, Math.min(1, masterVolume * outFactor));
         this.auxPlayer.volume = Math.max(0, Math.min(1, masterVolume * inFactor));
       } catch {
@@ -341,12 +394,19 @@ export class AudioManager {
           clearInterval(this.crossfadeTimer);
           this.crossfadeTimer = null;
         }
-        this.finalizeCrossfade(nextTrack, inCueSec + effectiveSec, onHandover);
+        void this.finalizeCrossfade(nextTrack, aux.currentTime, onHandover, mixVersion);
       }
-    }, 25);
+    };
+    // Native status events keep the mix progressing when Android throttles JS timers.
+    this.crossfadeSubscription = aux.addListener('playbackStatusUpdate', tick);
+    this.crossfadeTimer = setInterval(tick, 25);
   }
 
-  private finalizeCrossfade(nextTrack: Track, finalPositionSec: number, onHandover: (handedOverNatively?: boolean) => void): void {
+  private async finalizeCrossfade(nextTrack: Track, finalPositionSec: number, onHandover: (handedOverNatively?: boolean) => void, mixVersion: number): Promise<void> {
+    if (this.handoverPending) return;
+    this.handoverPending = true;
+    this.crossfadeSubscription?.remove(); this.crossfadeSubscription = null;
+    const version = this.version;
     if (this.crossfadeWatchdog) {
       clearTimeout(this.crossfadeWatchdog);
       this.crossfadeWatchdog = null;
@@ -357,19 +417,33 @@ export class AudioManager {
     }
 
     const player = this.player;
-    const masterVolume = this.options?.volume ?? 1;
 
     // Advance primary player to nextTrack
     const nextIndex = this.tracks.findIndex(t => t.id === nextTrack.id);
     let handedOverNatively = false;
     if (player && nextIndex >= 0) {
       try {
+        player.volume = 0;
         player.skipTo(nextIndex);
+        // Keep the auxiliary deck audible until the primary is ready and seek completes.
+        await new Promise<void>((resolve, reject) => {
+          let subscription: Subscription | undefined;
+          const timer = setTimeout(() => { subscription?.remove(); reject(new Error('Handover timeout')); }, 6_000);
+          const check = (status: AudioPlaylistStatus) => {
+            if (this.version !== version || mixVersion !== this.mixVersion || !this.isCrossfading) { clearTimeout(timer); subscription?.remove(); reject(new Error('Obsolete handover')); }
+            else if (status.currentIndex === nextIndex && status.isLoaded) { clearTimeout(timer); subscription?.remove(); resolve(); }
+          };
+          subscription = player.addListener('playlistStatusUpdate', check);
+          check(player.currentStatus);
+        });
+        if (version !== this.version || mixVersion !== this.mixVersion || !this.isCrossfading) return;
         if (finalPositionSec > 0) {
-          void player.seekTo(finalPositionSec);
+          await player.seekTo(this.auxPlayer?.currentTime || finalPositionSec);
         }
-        player.volume = masterVolume;
-        player.play();
+        if (version !== this.version || mixVersion !== this.mixVersion || !this.isCrossfading) return;
+        this.lastTime = this.auxPlayer?.currentTime || finalPositionSec;
+        this.lastDuration = nextTrack.durationMs / 1000;
+        if (this.paused) player.pause(); else player.play();
         handedOverNatively = true;
       } catch {
         // Fallback
@@ -377,15 +451,23 @@ export class AudioManager {
     }
 
     // Clean up auxiliary deck
+    if (version !== this.version || mixVersion !== this.mixVersion) return;
     this.cleanupAuxPlayer();
     this.isCrossfading = false;
+    this.handoverPending = false;
+    this.applyVolume();
 
     // Activate lockscreen metadata for Track B
-    this.activateMetadata(nextTrack);
+    if (handedOverNatively) {
+      this.reportedTrackId = nextTrack.id;
+      this.activateMetadata(nextTrack);
+    }
     onHandover(handedOverNatively);
   }
 
   abortCrossfade(): void {
+    this.mixVersion++;
+    this.crossfadeSubscription?.remove(); this.crossfadeSubscription = null;
     if (this.crossfadeWatchdog) {
       clearTimeout(this.crossfadeWatchdog);
       this.crossfadeWatchdog = null;
@@ -395,11 +477,14 @@ export class AudioManager {
       this.crossfadeTimer = null;
     }
     this.isCrossfading = false;
+    this.handoverPending = false;
     this.cleanupAuxPlayer();
     this.applyVolume();
   }
 
   private cleanupAuxPlayer(): void {
+    this.auxVersion++;
+    this.cancelAuxReady?.(); this.cancelAuxReady = null; this.auxReady = null;
     if (this.auxPlayer) {
       try { this.auxPlayer.pause(); } catch { /* Ignore */ }
       try { this.auxPlayer.release(); } catch { /* Ignore */ }
@@ -415,6 +500,7 @@ export class AudioManager {
     if (!this.player) return false;
     const index = this.tracks.findIndex((track) => track.id === id);
     if (index < 0) return false;
+    this.paused = false;
     if (this.player.currentIndex === index) {
       this.player.play();
       return true;
@@ -442,6 +528,7 @@ export class AudioManager {
   }
 
   pause(): void {
+    this.paused = true;
     this.player?.pause();
     if (this.isCrossfading && this.auxPlayer) {
       try { this.auxPlayer.pause(); } catch { /* Ignore */ }
@@ -449,6 +536,7 @@ export class AudioManager {
   }
 
   resume(): void {
+    this.paused = false;
     this.player?.play();
     if (this.isCrossfading && this.auxPlayer) {
       try { this.auxPlayer.play(); } catch { /* Ignore */ }
@@ -488,6 +576,11 @@ export class AudioManager {
       this.player.playbackRate = speed;
     }
     this.applyVolume();
+  }
+
+  configureStudio(config: NativeEffectsConfig): boolean {
+    this.studio = config;
+    return applyNativeEffects(config);
   }
 
   private applyVolume(): void {

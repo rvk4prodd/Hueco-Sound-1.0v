@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -28,9 +28,14 @@ export function ListeningStatsModal({ visible, onClose }: Props) {
   const notify = useUIStore((s) => s.notify);
 
   const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month' | 'all'>('week');
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!visible) return;
+    const refresh = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(refresh);
+  }, [visible]);
 
   const filteredHistory = useMemo(() => {
-    const now = Date.now();
     const oneDay = 24 * 60 * 60 * 1000;
     return history.filter((item) => {
       const diff = now - item.playedAt;
@@ -39,7 +44,7 @@ export function ListeningStatsModal({ visible, onClose }: Props) {
       if (timeFilter === 'month') return diff <= 30 * oneDay;
       return true;
     });
-  }, [history, timeFilter]);
+  }, [history, timeFilter, now]);
 
   // Aggregate stats
   const totalSeconds = useMemo(

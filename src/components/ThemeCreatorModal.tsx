@@ -5,19 +5,18 @@ import {
   Pressable,
   ScrollView,
   Share,
-  StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 import { useExperienceStore } from '../preferences/experience';
 import { useUIStore } from '../ui/useUIStore';
 import { GlassCard } from './GlassCard';
 import type { AccentTheme, WallpaperPreset } from '../preferences/experience';
+import { importTheme } from '../preferences/themeImport';
 
 interface Props {
   visible: boolean;
@@ -25,6 +24,7 @@ interface Props {
 }
 
 export function ThemeCreatorModal({ visible, onClose }: Props) {
+ useHuecoTheme();
   const exp = useExperienceStore();
   const notify = useUIStore((s) => s.notify);
   const [importText, setImportText] = useState('');
@@ -74,7 +74,7 @@ export function ThemeCreatorModal({ visible, onClose }: Props) {
   const handleImportTheme = () => {
     try {
       const parsed = JSON.parse(importText.trim());
-      exp.configure(parsed);
+      exp.configure(importTheme(parsed, exp));
       notify('Tema importado com sucesso!');
       setShowImportBox(false);
       setImportText('');
@@ -229,7 +229,7 @@ export function ThemeCreatorModal({ visible, onClose }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   container: { flex: 1, backgroundColor: '#070c12' },
   header: {
     flexDirection: 'row',
@@ -303,4 +303,4 @@ const s = StyleSheet.create({
     minHeight: 70,
     fontSize: 12,
   },
-});
+}));

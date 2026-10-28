@@ -192,6 +192,7 @@ export const useAudioFXStore = create<AudioFXStoreState>()(
           return {
             slowedReverb: {
               ...state.slowedReverb,
+              enabled: true,
               preset: 'none',
               speed: clamped,
               pitchSemitones: linkedPitch,
@@ -203,6 +204,7 @@ export const useAudioFXStore = create<AudioFXStoreState>()(
         set((state) => ({
           slowedReverb: {
             ...state.slowedReverb,
+            enabled: true,
             preset: 'none',
             reverbLevel: Math.max(0, Math.min(1, reverbLevel)),
           },
@@ -212,6 +214,7 @@ export const useAudioFXStore = create<AudioFXStoreState>()(
         set((state) => ({
           slowedReverb: {
             ...state.slowedReverb,
+            enabled: true,
             preset: 'none',
             pitchSemitones: Math.max(-12, Math.min(12, pitchSemitones)),
           },

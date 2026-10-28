@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { usePlayerStore } from '../player/usePlayerStore';
 import { searchTracks } from '../api/innertube';
 import { Track } from '../types';
 import { SongRow } from '../components/SongRow';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 import { ActionButton, Chip, Cover, EmptyState, IconButton, screenStyles as base } from './ScreenParts';
 import { CharacterSprite, HuecoLogo } from '../components/HuecoBrand';
 import { GlassCard } from '../components/GlassCard';
@@ -49,6 +49,7 @@ async function discover(vibe: string, seedTrack: Track | undefined, signal: Abor
 }
 
 export function HomeScreen() {
+ useHuecoTheme();
   const recentTracks = usePlayerStore(s => s.recentTracks);
   const likedTracks = usePlayerStore(s => s.likedTracks);
   const playlists = usePlayerStore(s => s.playlists);
@@ -135,7 +136,7 @@ export function HomeScreen() {
   />;
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   hero: { marginHorizontal: 20, marginTop: 8, marginBottom: 22, borderRadius: 24, padding: 20 },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   heroLabel: { color: colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.6 },
@@ -153,4 +154,4 @@ const s = StyleSheet.create({
   cardSubtitle: { color: colors.muted, fontSize: 12, lineHeight: 17 },
   createCover: { width: 142, height: 142, borderRadius: 10, backgroundColor: 'rgba(21, 27, 35, 0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.12)' },
   textLink: { minHeight: 44, justifyContent: 'center', paddingLeft: 15 },
-});
+}));

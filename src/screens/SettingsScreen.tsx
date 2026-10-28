@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePlayerStore } from '../player/usePlayerStore';
 import { useUIStore } from '../ui/useUIStore';
 import { exportLibrary, importLibrary, importLocalTracks } from '../library/transfers';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 import { Chip, ConfirmDialog, IconButton, screenStyles as base } from './ScreenParts';
 import { useExperienceStore } from '../preferences/experience';
 import { GlassCard } from '../components/GlassCard';
@@ -18,6 +18,7 @@ import { SlowedReverbModal } from '../components/SlowedReverbModal';
 import { ThemeCreatorModal } from '../components/ThemeCreatorModal';
 import { ListeningStatsModal } from '../components/ListeningStatsModal';
 import { SmartPlaylistModal } from '../components/SmartPlaylistModal';
+import { saveWallpaper } from '../preferences/wallpaper';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) { return <View style={s.section}><Text style={s.sectionTitle}>{title}</Text><GlassCard style={s.card}>{children}</GlassCard></View>; }
 function Option({ title, description, icon, onPress, disabled }: { title: string; description: string; icon: React.ComponentProps<typeof Ionicons>['name']; onPress: () => void; disabled?: boolean }) {
@@ -25,6 +26,7 @@ function Option({ title, description, icon, onPress, disabled }: { title: string
 }
 
 export function SettingsScreen() {
+ useHuecoTheme();
   const experience = useExperienceStore();
   const sleepTimerEndAt = usePlayerStore(s => s.sleepTimerEndAt);
   const sleepAtEndOfTrack = usePlayerStore(s => s.sleepAtEndOfTrack);
@@ -68,7 +70,8 @@ export function SettingsScreen() {
         copyToCacheDirectory: true,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const uri = result.assets[0].uri;
+        if ((result.assets[0].size || 0) > 12 * 1024 * 1024) { notify('Escolha uma imagem de até 12 MB.'); return; }
+        const uri = await saveWallpaper(result.assets[0].uri, experience.customWallpaperUri);
         experience.configure({ customWallpaperUri: uri, wallpaperPreset: 'custom' });
         notify('Plano de fundo personalizado aplicado com efeito glass!');
       }
@@ -113,15 +116,15 @@ export function SettingsScreen() {
         onPress={() => setShowSmartPlaylists(true)}
       />
     </Section>
-    <Section title="NORMALIZAÇÃO DE ÁUDIO (VOLUME)">
+    <Section title="PERFIL DE VOLUME">
       <View style={s.setting}>
-        <Text style={s.optionTitle}>Nivelamento inteligente de volume</Text>
-        <Text style={s.optionDescription}>Evita que uma música toque muito mais alto ou baixo que a anterior.</Text>
+        <Text style={s.optionTitle}>Intensidade do volume</Text>
+        <Text style={s.optionDescription}>Ajusta o ganho geral. Para controlar picos, ative o compressor no equalizador.</Text>
         <View style={s.wrapChips}>
           {([
-            { id: 'balanced', label: 'Equilibrado (-14 LUFS)' },
-            { id: 'loud', label: 'Mais Alto (-11 LUFS)' },
-            { id: 'quiet', label: 'Suave (-18 LUFS)' },
+            { id: 'balanced', label: 'Equilibrado' },
+            { id: 'loud', label: 'Mais alto' },
+            { id: 'quiet', label: 'Suave' },
             { id: 'off', label: 'Desativado' },
           ] as const).map(norm => (
             <Chip
@@ -257,7 +260,7 @@ export function SettingsScreen() {
 </View>;
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   intro: { flexDirection: 'row', alignItems: 'center', gap: 17, marginHorizontal: 20, backgroundColor: '#12312e', borderRadius: 20, padding: 20, marginBottom: 8 },
   introTitle: { color: colors.text, fontSize: 24, fontWeight: '800', letterSpacing: -.5 },
   section: { marginHorizontal: 20, marginTop: 26 },
@@ -278,4 +281,4 @@ const s = StyleSheet.create({
   footer: { marginTop: 32, alignItems: 'center', gap: 6 },
   wordmark: { color: colors.text, fontWeight: '900', fontSize: 32, letterSpacing: -1.7 },
   footerText: { color: colors.muted, fontSize: 11 },
-});
+}));

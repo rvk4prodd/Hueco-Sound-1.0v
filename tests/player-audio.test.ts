@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "../src/types";
 
-const native = vi.hoisted(() => ({ create: vi.fn(), mode: vi.fn(), environment: "bare", players: [] as FakePlaylist[] }));
+const native = vi.hoisted(() => ({ create: vi.fn(), mode: vi.fn(), environment: "bare", players: [] as FakePlaylist[], aux: [] as FakeDeck[] }));
 
 interface NativeEvent { currentIndex: number; playing: boolean; isLoaded: boolean; isBuffering: boolean; currentTime: number; duration: number; didJustFinish: boolean; error?: unknown; }
 class FakePlaylist {
   currentIndex = 0; isLoaded = false; volume = 1; playbackRate = 1; loop = "none";
+  get currentStatus() { return { currentIndex: this.currentIndex, isLoaded: this.isLoaded }; }
   sources: string[];
   events = new Map<string, ((event: any) => void)[]>();
   subscriptionsRemoved = 0;
@@ -29,15 +30,25 @@ class FakePlaylist {
       currentTime: 0, duration: 120, didJustFinish: false, ...overrides });
   }
 }
+class FakeDeck {
+  isLoaded = false; volume = 0; playbackRate = 1; currentTime = 0;
+  play = vi.fn(); pause = vi.fn(); release = vi.fn(); remove = vi.fn();
+  seekTo = vi.fn(async (seconds: number) => { this.currentTime = seconds; });
+  listeners = new Set<(status: { isLoaded: boolean; error?: string }) => void>();
+  addListener(_name: string, listener: (status: { isLoaded: boolean; error?: string }) => void) {
+    this.listeners.add(listener); return { remove: () => this.listeners.delete(listener) };
+  }
+  ready() { this.isLoaded = true; this.listeners.forEach(fn => fn({ isLoaded: true })); }
+}
 
 vi.mock("expo", () => ({ isRunningInExpoGo: () => native.environment === "storeClient" }));
-vi.mock("expo-audio", () => ({ createAudioPlaylist: (...args: unknown[]) => native.create(...args), setAudioModeAsync: (...args: unknown[]) => native.mode(...args) }));
+vi.mock("expo-audio", () => ({ createAudioPlayer: () => { const deck = new FakeDeck(); native.aux.push(deck); return deck; }, createAudioPlaylist: (...args: unknown[]) => native.create(...args), setAudioModeAsync: (...args: unknown[]) => native.mode(...args) }));
 const a: Track = { id: "a", title: "Primeira", artists: "Artista", coverUrl: "https://image.test/a.jpg", durationMs: 120000 };
 const b = { ...a, id: "b", title: "Segunda" }, c = { ...a, id: "c", title: "Terceira" }, d = { ...a, id: "d", title: "Quarta" };
 let AudioManager: typeof import("../src/player/audioManager").AudioManager;
 
 beforeEach(async () => {
-  vi.resetModules(); vi.clearAllMocks(); native.environment = "bare"; native.players = []; native.mode.mockResolvedValue(undefined);
+  vi.resetModules(); vi.clearAllMocks(); native.environment = "bare"; native.players = []; native.aux = []; native.mode.mockResolvedValue(undefined);
   native.create.mockImplementation((options: { sources: string[] }) => { const player = new FakePlaylist(options.sources); native.players.push(player); return player; });
   AudioManager = (await import("../src/player/audioManager")).AudioManager;
 });
@@ -168,4 +179,82 @@ it('starts the next native track with the incoming fade instead of a full-volume
   player.ready({ currentTime: 1 });
   expect(player.volume).toBeCloseTo(.7 * Math.SQRT1_2);
   manager.stop();
+});
+
+describe('dual deck transitions', () => {
+  it('can complete through native status events without a JavaScript timer tick', async () => {
+    vi.useFakeTimers();
+    const manager = new AudioManager(); await start(manager);
+    await manager.setUpcoming([b], async () => 'b.mp3');
+    const preparing = manager.prepareAuxTrack(b, 'b.mp3'); const deck = native.aux[0]; deck.ready(); await preparing;
+    const handedOver = vi.fn(); await manager.executeCrossfade(b, 2, 'linear', 0, handedOver);
+    deck.currentTime = 2.1; deck.ready();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(handedOver).toHaveBeenCalledExactlyOnceWith(true); manager.stop();
+  });
+  it('mirrors notification or Bluetooth pause and resume to the incoming deck', async () => {
+    vi.useFakeTimers();
+    const manager = new AudioManager(); const { player } = await start(manager);
+    const preparing = manager.prepareAuxTrack(b, 'b.mp3'); const deck = native.aux[0]; deck.ready(); await preparing;
+    await manager.executeCrossfade(b, 2, 'linear', 0, vi.fn());
+    player.ready({ playing: false, currentTime: 110 });
+    expect(deck.pause).toHaveBeenCalled();
+    const previousPlays = deck.play.mock.calls.length;
+    player.ready({ playing: true, currentTime: 110 });
+    expect(deck.play).toHaveBeenCalledTimes(previousPlays + 1); manager.stop();
+  });
+  it('waits for native readiness before seeking and frees a failed preparation for retry', async () => {
+    vi.useFakeTimers();
+    const manager = new AudioManager(); await start(manager);
+    const preparing = manager.prepareAuxTrack(b, 'b.mp3', 12.5), deck = native.aux[0];
+    expect(deck.seekTo).not.toHaveBeenCalled();
+    deck.ready(); expect(await preparing).toBe(true); expect(deck.seekTo).toHaveBeenCalledWith(12.5);
+    const failed = manager.prepareAuxTrack(c, 'c.mp3');
+    await vi.advanceTimersByTimeAsync(8001); expect(await failed).toBe(false);
+    const retried = manager.prepareAuxTrack(c, 'fresh-c.mp3');
+    native.aux.at(-1)!.ready(); expect(await retried).toBe(true);
+    manager.stop();
+  });
+  it('does not seek or start an obsolete deck after stopping', async () => {
+    const manager = new AudioManager(); await start(manager);
+    const pending = manager.prepareAuxTrack(b, 'b.mp3', 20), deck = native.aux[0];
+    manager.stop(); deck.ready(); expect(await pending).toBe(false);
+    expect(deck.seekTo).not.toHaveBeenCalled(); expect(deck.play).not.toHaveBeenCalled();
+  });
+  it('freezes the mix while paused and follows incoming audio time on resume', async () => {
+    vi.useFakeTimers();
+    const manager = new AudioManager(); const { player, changed } = await start(manager);
+    await manager.setUpcoming([b], async () => 'b.mp3');
+    const preparing = manager.prepareAuxTrack(b, 'b.mp3'); const deck = native.aux[0]; deck.ready(); await preparing;
+    const handedOver = vi.fn(); await manager.executeCrossfade(b, 2, 'linear', 0, handedOver);
+    deck.currentTime = 1; await vi.advanceTimersByTimeAsync(25);
+    expect(player.volume).toBeCloseTo(.35); expect(deck.volume).toBeCloseTo(.35);
+    manager.pause(); await vi.advanceTimersByTimeAsync(15000);
+    expect(handedOver).not.toHaveBeenCalled(); expect(manager.activelyCrossfading).toBe(true);
+    manager.resume(); deck.currentTime = 2.1; await vi.advanceTimersByTimeAsync(25);
+    expect(handedOver).toHaveBeenCalledExactlyOnceWith(true);
+    expect(player.seekTo).toHaveBeenCalledWith(2.1); expect(changed).not.toHaveBeenCalled();
+    expect(player.volume).toBeCloseTo(.7); manager.stop();
+  });
+  it('abandons a stalled incoming deck and restores the primary volume', async () => {
+    vi.useFakeTimers();
+    const manager = new AudioManager(); const { player } = await start(manager);
+    const preparing = manager.prepareAuxTrack(b, 'b.mp3'); native.aux[0].ready(); await preparing;
+    const handedOver = vi.fn(); await manager.executeCrossfade(b, 2, 'linear', 0, handedOver);
+    await vi.advanceTimersByTimeAsync(8100);
+    expect(handedOver).toHaveBeenCalledExactlyOnceWith(false);
+    expect(player.volume).toBeCloseTo(.7); expect(manager.activelyCrossfading).toBe(false); manager.stop();
+  });
+  it('cannot finish an old handover after the user skips again', async () => {
+    vi.useFakeTimers();
+    const manager = new AudioManager(); const { player } = await start(manager);
+    await manager.setUpcoming([b, c], async t => t.id + '.mp3');
+    const preparing = manager.prepareAuxTrack(b, 'b.mp3'); const deck = native.aux[0]; deck.ready(); await preparing;
+    let completeSeek!: () => void;
+    player.seekTo.mockImplementationOnce(() => new Promise<void>(resolve => { completeSeek = resolve; }));
+    const handedOver = vi.fn(); await manager.executeCrossfade(b, 2, 'linear', 0, handedOver);
+    deck.currentTime = 2.1; await vi.advanceTimersByTimeAsync(25);
+    manager.skipToTrack('c'); completeSeek(); await vi.advanceTimersByTimeAsync(25);
+    expect(handedOver).not.toHaveBeenCalled(); expect(manager.currentTrackId).toBe('c'); manager.stop();
+  });
 });

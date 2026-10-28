@@ -17,11 +17,14 @@ import { colors } from '../theme';
 import type { TabType } from '../types';
 import { useExperienceStore } from '../preferences/experience';
 import { audioManager } from '../player/audioManager';
+import { useAudioFXStore } from '../preferences/audioFX';
 
 const PRESET_GRADIENTS: Record<string, [string, string, ...string[]]> = {
   neon: ['#120726', '#25083f', '#071523'],
   midnight: ['#070b19', '#0d193a', '#03060c'],
   cyberpunk: ['#041a1c', '#092d2b', '#030c14'],
+  aurora: ['#041b23', '#15372c', '#080e21'],
+  sunset: ['#2b1425', '#3a201a', '#0b1020'],
 };
 
 export default function RootLayout() {
@@ -30,6 +33,20 @@ export default function RootLayout() {
   const wallpaperPreset = useExperienceStore(s => s.wallpaperPreset);
   const customWallpaperUri = useExperienceStore(s => s.customWallpaperUri);
   const glassBlur = useExperienceStore(s => s.glassBlurIntensity);
+  const fx = useAudioFXStore(s => s.audioFX), slowed = useAudioFXStore(s => s.slowedReverb);
+  const rate = usePlayerStore(s => s.playbackRate);
+  const normalization = useExperienceStore(s => s.normalizationMode);
+  useEffect(() => {
+    const available = audioManager.configureStudio({
+      enabled: fx.enabled, eq: fx.bands.map(band => band.gainDb),
+      compressor: fx.compressorEnabled, threshold: fx.compressorThreshold, ratio: fx.compressorRatio,
+      width: fx.stereoWidth / 100, reverb: slowed.enabled ? slowed.reverbLevel : 0,
+      speed: slowed.enabled ? slowed.speed : rate, linked: slowed.enabled && slowed.isPitchLinked,
+      pitch: slowed.enabled && !slowed.isPitchLinked ? slowed.pitchSemitones : 0,
+    });
+    audioManager.setNormalization(normalization);
+    if (!available && (fx.enabled || slowed.enabled)) useUIStore.getState().notify('Os efeitos de áudio precisam do novo APK com o motor DSP.');
+  }, [fx, slowed, rate, normalization]);
 
   useEffect(() => { audioManager.configureTransition(transition, seconds, curve); }, [transition, seconds, curve]);
   useEffect(() => {
@@ -61,7 +78,7 @@ export default function RootLayout() {
           {/* Background Wallpaper with Glass Effect */}
           {customWallpaperUri ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-              <Image source={{ uri: customWallpaperUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              <Image source={{ uri: customWallpaperUri }} style={[StyleSheet.absoluteFill, { opacity: .65 }]} blurRadius={glassBlur / 5} resizeMode="cover" />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(6, 12, 16, ${Math.max(0.2, 0.65 - (glassBlur / 100) * 0.4)})` }]} />
             </View>
           ) : wallpaperPreset !== 'default' && PRESET_GRADIENTS[wallpaperPreset] ? (

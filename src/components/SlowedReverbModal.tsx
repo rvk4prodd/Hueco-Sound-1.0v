@@ -3,14 +3,13 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  StyleSheet,
   Switch,
   Text,
   View,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 import { useAudioFXStore } from '../preferences/audioFX';
 import { audioManager } from '../player/audioManager';
 import { GlassCard } from './GlassCard';
@@ -22,6 +21,7 @@ interface Props {
 }
 
 export function SlowedReverbModal({ visible, onClose }: Props) {
+ useHuecoTheme();
   const slowedReverb = useAudioFXStore((s) => s.slowedReverb);
   const applyPreset = useAudioFXStore((s) => s.applySlowedReverbPreset);
   const setSpeed = useAudioFXStore((s) => s.setSlowedSpeed);
@@ -198,7 +198,7 @@ export function SlowedReverbModal({ visible, onClose }: Props) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   container: { flex: 1, backgroundColor: '#070c12' },
   header: {
     flexDirection: 'row',
@@ -239,4 +239,4 @@ const s = StyleSheet.create({
   scaleRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   scaleMark: { color: colors.muted, fontSize: 10 },
   paramLabel: { color: colors.text, fontSize: 13 },
-});
+}));

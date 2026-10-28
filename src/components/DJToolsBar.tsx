@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
 import { useAudioFXStore, HOT_CUE_COLORS } from '../preferences/audioFX';
 import { usePlayerStore } from '../player/usePlayerStore';
-import { colors } from '../theme';
+import { colors, themedStyles, useHuecoTheme } from '../theme';
 
 function formatSec(seconds: number | null): string {
   if (seconds === null || Number.isNaN(seconds)) return '--:--';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
+  return String(seconds.toFixed(1)) + ' s';
 }
 
 export function DJToolsBar() {
+ useHuecoTheme();
   const currentTrack = usePlayerStore(s => s.currentTrack);
   const positionMs = usePlayerStore(s => s.positionMs);
   const seekTo = usePlayerStore(s => s.seekTo);
@@ -30,7 +29,7 @@ export function DJToolsBar() {
 
   const [activeTab, setActiveTab] = useState<'cues' | 'loop'>('cues');
 
-  const currentSec = Math.floor(positionMs / 1000);
+  const currentSec = Math.round(positionMs / 100) / 10;
   const currentSecPrecise = (positionMs / 1000).toFixed(1);
   const trackId = currentTrack?.id || '';
   const trackCues = (trackId && hotCuesRecord[trackId]) || [];
@@ -213,7 +212,7 @@ export function DJToolsBar() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   container: {
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderColor: 'rgba(255, 255, 255, 0.08)',
@@ -440,4 +439,4 @@ const s = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-});
+}));
