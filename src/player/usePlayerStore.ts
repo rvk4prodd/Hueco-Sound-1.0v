@@ -7,9 +7,10 @@ import { MAX_QUEUE, moved, shuffledIds, uniqueTracks } from "./queue";
 import { finite, LEGACY_LIKES_KEY, LEGACY_RECENTS_KEY, parseSavedData, SavedPlayerData, STORAGE_KEY, validatedIds, validatedTracks } from "./persistence";
 import { useUIStore } from "../ui/useUIStore";
 import { getPlaybackTrack } from "../library/useDeviceLibraryStore";
-import { originalPlaybackSource, preparePlaybackSource } from "./prepareSource";
+import { discardPreparedSource, originalPlaybackSource, preparePlaybackSource } from "./prepareSource";
 import { useExperienceStore } from "../preferences/experience";
 import { useAudioFXStore } from "../preferences/audioFX";
+import { mixPoints } from './mixSettings';
 
 export interface PlayerState {
   currentTrack: Track | null;
@@ -87,6 +88,7 @@ let lastCheckpoint = 0;
 let lastFinishedTrack: string | null = null;
 let activeLoadVersion: number | null = null;
 let recoveredTrackId: string | null = null;
+let recoveryHoldPosition = 0;
 
 function message(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "Não foi possível reproduzir. Tente novamente.";
@@ -224,6 +226,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       ? state.playlists.find(p => p.id === state.activePlaylistId)
       : null;
     const mixSettings = playlist?.mixSettings;
+    if (mixSettings && !mixSettings.enabled) return;
 
     let durationSec = 4;
     let outPointSec = status.duration - 4;
@@ -250,7 +253,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       }
     }
 
-    if (!isTransitionActive || outPointSec <= 0) return;
+    if (!isTransitionActive) return;
+    const bounded = mixPoints({ durationSeconds: durationSec, volume: curve === 'smooth' ? 'equal_power' : curve, eq: 'none', effect: 'none', preset: 'custom', outPointSec, inPointSec: inCueSec }, status.duration, nextTrack.durationMs / 1000 || status.duration);
+    durationSec = bounded.seconds; outPointSec = bounded.out; inCueSec = bounded.in;
+    if (outPointSec <= 0) return;
 
     // Pre-buffer auxiliary deck 12 seconds in advance
     if (status.currentTime >= outPointSec - 12 && auxPreparingTrackId !== nextTrack.id) {
@@ -286,14 +292,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     if (requestVersion !== version || get().currentTrack?.id !== status.trackId) return;
     if (expireSleepTimer()) return;
     if (status.error) {
+      // The initial load promise owns its retry; keep user intent while it is pending.
+      if (activeLoadVersion === version) return;
       // Prefetched tracks skip loadAndPlay; recover their expired/broken source here too.
-      if (activeLoadVersion !== version && recoveredTrackId !== status.trackId && !getPlaybackTrack(get().currentTrack!).streamUrl) {
+      if (desiredPlaying && activeLoadVersion !== version && recoveredTrackId !== status.trackId && !getPlaybackTrack(get().currentTrack!).streamUrl) {
         recoveredTrackId = status.trackId;
+        recoveryHoldPosition = get().positionMs + 3_000;
         clearApiCaches?.();
+        if (status.sourceUrl) discardPreparedSource(status.sourceUrl);
         void startPlayback(get().currentTrack!, undefined, false, true, get().positionMs, status.sourceUrl ? [status.sourceUrl] : []);
         return;
       }
-      recoveredTrackId = null;
       desiredPlaying = false;
       clearApiCaches?.();
       update({ isPlaying: false, isLoading: false, error: status.error });
@@ -302,7 +311,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     }
     const state = get();
     const positionMs = finite(Math.round(status.currentTime * 1000), state.positionMs);
+    if (recoveredTrackId === status.trackId && status.playing && positionMs >= recoveryHoldPosition) recoveredTrackId = null;
     const durationMs = status.duration > 0 ? finite(Math.round(status.duration * 1000), state.durationMs) : state.durationMs;
+    if (status.playing) desiredPlaying = true;
+    else if (activeLoadVersion !== version && status.isLoaded && !status.isBuffering && !status.didJustFinish && positionMs < durationMs - 600) desiredPlaying = false;
     update({ isPlaying: status.playing, isLoading: status.isBuffering || (!status.isLoaded && desiredPlaying), positionMs, durationMs });
     if (Date.now() - lastCheckpoint > 10_000 || state.isPlaying !== status.playing) { lastCheckpoint = Date.now(); save(); }
 
@@ -404,6 +416,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         if (requestVersion !== version) return;
         if (attempt === 0 && !getPlaybackTrack(track).streamUrl) {
           clearApiCaches?.();
+          discardPreparedSource(url);
           desiredPlaying = true;
           excluded.push(originalPlaybackSource(url));
           update({ isLoading: true, error: null });
@@ -577,11 +590,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
     retryPlayback: async () => {
       const state = get();
+      const version = ++requestVersion;
+      recoveredTrackId = null;
       clearApiCaches?.();
-      await audioManager.recoverEngine?.();
-      if (state.currentTrack) {
-        await startPlayback(state.currentTrack, undefined, false, true, state.positionMs);
-      }
+      streamController?.abort();
+      try {
+        await audioManager.recoverEngine?.();
+        if (requestVersion !== version) return;
+        if (state.currentTrack) await startPlayback(state.currentTrack, undefined, false, true, state.positionMs);
+      } catch (error) { if (requestVersion === version) update({ isPlaying: false, isLoading: false, error: message(error) }); }
     },
     addToQueue: (track) => {
       const state = get();

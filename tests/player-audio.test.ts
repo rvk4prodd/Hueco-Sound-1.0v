@@ -149,7 +149,7 @@ it('keeps Expo Go audio usable without binding an unavailable app service', asyn
  expect(player.play).toHaveBeenCalled();manager.stop();
 });
 
-it('applies the selected fade to native volume and restores user volume when disabled', async () => {
+it('fades the entrance and leaves the outgoing volume to the dual deck', async () => {
   const manager = new AudioManager();
   manager.configureTransition('fade', 3, 'linear');
   const { player } = await start(manager);
@@ -159,9 +159,9 @@ it('applies the selected fade to native volume and restores user volume when dis
   player.ready({ currentTime: 60 });
   expect(player.volume).toBeCloseTo(.7);
   player.ready({ currentTime: 118.5 });
-  expect(player.volume).toBeCloseTo(.35);
+  expect(player.volume).toBeCloseTo(.7);
   manager.setVolume(.4);
-  expect(player.volume).toBeCloseTo(.2);
+  expect(player.volume).toBeCloseTo(.4);
   manager.configureTransition('direct', 3, 'linear');
   expect(player.volume).toBeCloseTo(.4);
   manager.stop();
@@ -257,4 +257,28 @@ describe('dual deck transitions', () => {
     manager.skipToTrack('c'); completeSeek(); await vi.advanceTimersByTimeAsync(25);
     expect(handedOver).not.toHaveBeenCalled(); expect(manager.currentTrackId).toBe('c'); manager.stop();
   });
+});
+
+it('reports a non-advancing source once and does not mistake pause for a stall', async () => {
+  vi.useFakeTimers();
+  const manager = new AudioManager(); const { player, updates } = await start(manager);
+  player.ready({ currentTime: 20 }); await vi.advanceTimersByTimeAsync(11000);
+  expect(updates.mock.calls.some(([value]) => value.error)).toBe(false);
+  manager.pause(); await vi.advanceTimersByTimeAsync(20000);
+  expect(updates.mock.calls.some(([value]) => value.error)).toBe(false);
+  manager.resume(); player.ready({ currentTime: 21 }); await vi.advanceTimersByTimeAsync(12500);
+  expect(updates.mock.calls.filter(([value]) => value.error)).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(updates.mock.calls.filter(([value]) => value.error)).toHaveLength(1); manager.stop();
+});
+
+it('does not apply a second entrance fade after a short dual deck transition', async () => {
+  vi.useFakeTimers();
+  const manager = new AudioManager(); manager.configureTransition('fade', 8, 'linear');
+  const { player } = await start(manager); await manager.setUpcoming([b], async () => 'b.mp3');
+  const preparing = manager.prepareAuxTrack(b, 'b.mp3'); const deck = native.aux[0]; deck.ready(); await preparing;
+  const handedOver = vi.fn(); await manager.executeCrossfade(b, 1, 'linear', 0, handedOver);
+  deck.currentTime = 1.1; await vi.advanceTimersByTimeAsync(25);
+  expect(handedOver).toHaveBeenCalledExactlyOnceWith(true);
+  expect(player.volume).toBeCloseTo(.7); manager.stop();
 });

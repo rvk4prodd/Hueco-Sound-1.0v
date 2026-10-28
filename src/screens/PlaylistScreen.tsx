@@ -41,7 +41,7 @@ export function PlaylistScreen() {
   const [importing, setImporting] = useState(false);
   const [downloadingState, setDownloadingState] = useState<{ current: number; total: number } | null>(null);
   const [mixStudioOpen, setMixStudioOpen] = useState(false);
-  const [selectedPairIndex, setSelectedPairIndex] = useState(0);
+  const [selectedPairIndex, setSelectedPairIndex] = useState<number | undefined>();
   const [removingLocal, setRemovingLocal] = useState<{ id: string; title: string } | null>(null);
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState(false);
@@ -140,7 +140,7 @@ export function PlaylistScreen() {
               accessibilityLabel="Abrir mixagem da playlist"
               style={[s.mixButton, playlist.mixSettings?.enabled && s.mixButtonActive]}
               onPress={() => {
-                setSelectedPairIndex(0);
+                setSelectedPairIndex(undefined);
                 setMixStudioOpen(true);
               }}
             >

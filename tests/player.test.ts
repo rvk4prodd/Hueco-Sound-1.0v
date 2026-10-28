@@ -24,7 +24,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({ default: {
   setItem: (...args: unknown[]) => harness.setItem(...args),
 } }));
 vi.mock("../src/api/innertube", () => ({ resolveAudioStream: (...args: unknown[]) => harness.resolve(...args), fetchLyrics: async () => [], isAbortError: (error: unknown) => error instanceof Error && error.name === 'AbortError', clearApiCaches: vi.fn() }));
-vi.mock("../src/player/prepareSource", () => ({ preparePlaybackSource: (...args: unknown[]) => harness.prepare(...args), originalPlaybackSource: (url: string) => url }));
+vi.mock("../src/player/prepareSource", () => ({ preparePlaybackSource: (...args: unknown[]) => harness.prepare(...args), originalPlaybackSource: (url: string) => url, discardPreparedSource: vi.fn() }));
 vi.mock("../src/library/useDeviceLibraryStore", () => ({ getPlaybackTrack: (track: Track) => track }));
 vi.mock("../src/player/audioManager", () => ({ audioManager: {
   get hasPlayer() { return harness.hasPlayer; },
@@ -258,4 +258,38 @@ it('prepares the full source before giving it to native playback and retries a f
   expect(harness.load).toHaveBeenCalledTimes(1);
   expect(harness.load.mock.calls[0][0]).toBe('file:///cache/complete.m4a');
   expect(state().isPlaying).toBe(true);
+});
+
+it('preserves playback intent when the first native load emits an error before its retry', async () => {
+  harness.load.mockImplementationOnce(async (_url: string, track: Track, callback: (status: PlaybackStatus) => void) => {
+    callback({ trackId: track.id, playing: false, isLoaded: false, isBuffering: false, currentTime: 0, duration: 120, didJustFinish: false, error: 'Source error' });
+    throw new Error('Source error');
+  });
+  await state().playTrack(a, [a]);
+  expect(harness.load).toHaveBeenCalledTimes(2);
+  expect(state().isPlaying).toBe(true); expect(state().error).toBeNull();
+  expect(harness.pause).not.toHaveBeenCalled();
+});
+
+it('allows another recovery only after the previously repaired source advances', async () => {
+  await state().playTrack(a, [a]);
+  status({ currentTime: 20 });
+  status({ currentTime: 20, error: 'Source error', sourceUrl: 'https://audio.test/old.mp3' });
+  await vi.waitFor(() => expect(harness.load).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(state().isPlaying).toBe(true));
+  status({ currentTime: 24 });
+  status({ currentTime: 24, error: 'Next source error', sourceUrl: 'https://audio.test/expired-again.mp3' });
+  await vi.waitFor(() => expect(harness.load).toHaveBeenCalledTimes(3));
+  expect(state().error).toBeNull();
+});
+
+it('a retry waiting on native initialization cannot replace a newer track selection', async () => {
+  // The native manager is already mocked; add a deferred initialization for this retry.
+  const { audioManager } = await import('../src/player/audioManager');
+  let ready!: () => void;
+  Object.assign(audioManager, { recoverEngine: vi.fn(() => new Promise<void>(resolve => { ready = resolve; })) });
+  await state().playTrack(a, [a, b]);
+  const retry = state().retryPlayback(); await settle();
+  await state().playTrack(b, [a, b]); ready(); await retry;
+  expect(state().currentTrack?.id).toBe('b');
 });

@@ -77,6 +77,8 @@ export class AudioManager {
   private normalizationFactor = 1.0;
   private reverbLevel = 0;
   private studio: NativeEffectsConfig | null = null;
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private incomingFadeComplete = false;
 
   init(): Promise<void> {
     if (!this.modePromise) {
@@ -118,9 +120,11 @@ export class AudioManager {
     if (this.studio) applyNativeEffects(this.studio);
     this.lastTime = 0;
     this.lastDuration = 0;
+    this.incomingFadeComplete = false;
     this.applyVolume();
 
     let playbackError: string | null = null;
+    let lastStatus: PlaybackStatus | null = null, lastProgressAt = Date.now(), healthFailed = false;
     this.subscriptions = [
       player.addListener("playlistStatusUpdate", (status) => {
         if (this.player !== player || version !== this.version) return;
@@ -158,12 +162,15 @@ export class AudioManager {
         }
         if (this.isCrossfading && playingTrack.id !== this.reportedTrackId) return;
 
-        onStatusUpdate({
+        const currentStatus: PlaybackStatus = {
           ...status,
           trackId: playingTrack.id,
           sourceUrl: originalPlaybackSource(this.urls[effectiveIndex] || url),
           error,
-        });
+        };
+        if (!lastStatus || lastStatus.trackId !== currentStatus.trackId || Math.abs(currentStatus.currentTime - lastStatus.currentTime) > .01 || !currentStatus.playing && !currentStatus.isBuffering) lastProgressAt = Date.now();
+        lastStatus = currentStatus;
+        onStatusUpdate(currentStatus);
       }),
       player.addListener("trackChanged", ({ currentIndex }) => {
         if (this.player !== player || version !== this.version) return;
@@ -171,6 +178,7 @@ export class AudioManager {
         if (!playingTrack || playingTrack.id === this.reportedTrackId) return;
         if (this.isCrossfading) return;
         this.reportedTrackId = playingTrack.id;
+        this.incomingFadeComplete = false;
         this.lastTime = 0;
         this.lastDuration = playingTrack.durationMs ? playingTrack.durationMs / 1000 : 0;
         this.applyVolume();
@@ -191,6 +199,14 @@ export class AudioManager {
       if (!loaded || playbackError) {
         throw new Error(playbackError || "O áudio demorou demais para carregar. Verifique sua conexão e tente novamente.");
       }
+      lastProgressAt = Date.now();
+      this.healthTimer = setInterval(() => {
+        if (version !== this.version || this.player !== player || healthFailed || !lastStatus) return;
+        if (this.paused || this.isCrossfading || (!lastStatus.playing && !lastStatus.isBuffering) || lastStatus.didJustFinish) { lastProgressAt = Date.now(); return; }
+        if (Date.now() - lastProgressAt < 12_000) return;
+        healthFailed = true;
+        onStatusUpdate({ ...lastStatus, error: 'A fonte de áudio parou de responder.', isBuffering: false, playing: false });
+      }, 1_000);
     } catch (error) {
       if (version === this.version) this.stop();
       throw error;
@@ -455,6 +471,7 @@ export class AudioManager {
     this.cleanupAuxPlayer();
     this.isCrossfading = false;
     this.handoverPending = false;
+    this.incomingFadeComplete = handedOverNatively;
     this.applyVolume();
 
     // Activate lockscreen metadata for Track B
@@ -585,7 +602,9 @@ export class AudioManager {
 
   private applyVolume(): void {
     if (!this.player || !this.options || this.isCrossfading) return;
-    const gain = this.transition === 'fade' ? transitionGain(this.lastTime, this.lastDuration, this.transitionSeconds, this.fadeCurve) : 1;
+    // The dual deck owns the outgoing fade. A second fade here could mute a track
+    // before the incoming source was ready, leaving the player apparently stuck.
+    const gain = this.transition === 'fade' && !this.incomingFadeComplete ? transitionGain(this.lastTime, 0, this.transitionSeconds, this.fadeCurve) : 1;
     this.player.volume = Math.max(0, Math.min(1, this.options.volume * gain * this.normalizationFactor));
   }
 
@@ -598,6 +617,8 @@ export class AudioManager {
   }
 
   stop(): void {
+    if (this.healthTimer) clearInterval(this.healthTimer);
+    this.healthTimer = null;
     this.abortCrossfade();
     this.version++;
     this.upcomingVersion++;

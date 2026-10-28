@@ -108,3 +108,12 @@ export function retainPreparedSources(urls: string[]): void {
 }
 
 export function originalPlaybackSource(url: string): string { return originals.get(url) || url; }
+
+/** Evict only a file we prepared, never a user download or arbitrary device file. */
+export function discardPreparedSource(url: string): void {
+  let uri = originals.has(url) ? url : null;
+  if (!uri && /^https?:/.test(url) && googleAudioSize(url) !== null) uri = new File(directory(), filename(url)).uri;
+  if (!uri) return;
+  try { const file = new File(uri); if (file.exists) file.delete(); } catch { /* Retry can use another source. */ }
+  originals.delete(uri); reserved.delete(uri); pinned.delete(uri);
+}

@@ -95,3 +95,15 @@ it('passes through device files and non-Google providers', async () => {
   expect(await cache.preparePlaybackSource('https://authorized.test/audio.mp4')).toBe('https://authorized.test/audio.mp4');
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it('evicts a decoded bad file before retrying a fresh signature and never removes user files', async () => {
+  const local = await cache.preparePlaybackSource(source());
+  disk.set(local, { bytes: new Uint8Array(20).fill(9), modified: Date.now() });
+  cache.discardPreparedSource(source());
+  expect(disk.has(local)).toBe(false);
+  await cache.preparePlaybackSource(source().replace('private', 'renewed'));
+  expect(fetch).toHaveBeenCalledTimes(2);
+  disk.set('file:///music/local.mp3', { bytes: new Uint8Array(20), modified: Date.now() });
+  cache.discardPreparedSource('file:///music/local.mp3');
+  expect(disk.has('file:///music/local.mp3')).toBe(true);
+});
